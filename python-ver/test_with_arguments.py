@@ -58,40 +58,45 @@ def test_with_explicit_files(knowledge_csv: str = None,
             
             if session:
                 print(f"   ✅ Session loaded successfully")
-                print(f"   Item sequence length: {len(session['item_sequence'])}")
+                print(f"   Filtered sequence length: {len(session['f'])}")
                 print(f"   Semantic sequence shape: {session['semantic_attribute_seq'].shape}")
-                print(f"   Sample item sequence: {session['item_sequence'][:10]}")
+                print(f"   Sample grid positions: {session['f'][:10] if len(session['f']) > 0 else 'No valid positions'}")
+                print(f"   Task extracted: {session['task']}")
+                print(f"   Item list: {session['list']}")
                 
-                # Test with four-layer pLSA
-                print(f"\n3. Testing four-layer pLSA with real session...")
-                
-                # Create Feature→Observation mapping from knowledge base
-                n_items, n_attributes = kb.shape
-                n_values = np.max(kb, axis=0)
-                total_features = np.sum(n_values)
-                
-                # Create P(o|v) mapping
-                p_o_v = np.zeros((n_items, total_features))
-                offsets = [0]
-                for i in range(len(n_values) - 1):
-                    offsets.append(offsets[-1] + n_values[i])
-                
-                for item_idx in range(n_items):
-                    item_attrs = kb[item_idx, :]
-                    for attr in range(n_attributes):
-                        attr_value = item_attrs[attr]
-                        feature_idx = offsets[attr] + attr_value - 1
-                        p_o_v[item_idx, feature_idx] = 1.0
-                
-                # Train model
-                model = FourLayerPLSA(n_topics=2)
-                model.set_observation_model(p_o_v)
-                
-                sessions = [session['semantic_attribute_seq']]
-                params, history = model.fit(sessions, train_lim=1e-4, max_itr=20)
-                
-                print(f"   Training completed: {len(history)} iterations")
-                print(f"   Final likelihood: {history[-1]:.4f}")
+                # Test with four-layer pLSA if we have valid data
+                if len(session['f']) > 0:
+                    print(f"\n3. Testing four-layer pLSA with real session...")
+                    
+                    # Create Feature→Observation mapping from knowledge base
+                    n_items, n_attributes = kb.shape
+                    n_values = np.max(kb, axis=0)
+                    total_features = np.sum(n_values)
+                    
+                    # Create P(o|v) mapping
+                    p_o_v = np.zeros((n_items, total_features))
+                    offsets = [0]
+                    for i in range(len(n_values) - 1):
+                        offsets.append(offsets[-1] + n_values[i])
+                    
+                    for item_idx in range(n_items):
+                        item_attrs = kb[item_idx, :]
+                        for attr in range(n_attributes):
+                            attr_value = item_attrs[attr]
+                            feature_idx = offsets[attr] + attr_value - 1
+                            p_o_v[item_idx, feature_idx] = 1.0
+                    
+                    # Train model
+                    model = FourLayerPLSA(n_topics=2)
+                    model.set_observation_model(p_o_v)
+                    
+                    sessions = [session['semantic_attribute_seq']]
+                    params, history = model.fit(sessions, train_lim=1e-4, max_itr=20)
+                    
+                    print(f"   Training completed: {len(history)} iterations")
+                    print(f"   Final likelihood: {history[-1]:.4f}")
+                else:
+                    print(f"\n3. No valid gaze data found for training")
                 
         except Exception as e:
             print(f"   ❌ Error loading session: {e}")
@@ -145,8 +150,8 @@ def main():
 
 if __name__ == "__main__":
     print("Usage examples:")
-    print("python test_with_arguments.py --knowledge ../knowledge.csv")
-    print("python test_with_arguments.py --knowledge ../knowledge.csv --gaze ../170116024150092.csv --layout ../170116024150092.list")
+    print("python test_with_arguments.py --knowledge ../sample_data/knowledge.csv")
+    print("python test_with_arguments.py --knowledge ../sample_data/knowledge.csv --gaze ../sample_data/170116024150092.csv --layout ../sample_data/170116024150092.list")
     print("")
     
     reader, kb = main()

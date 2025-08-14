@@ -6,7 +6,7 @@ Translates ReadwithTimestamp.m and LoadGaze.m functionality
 import numpy as np
 import pandas as pd
 import os
-from typing import Dict, List, Tuple, Any
+from typing import Dict, List, Any
 import sys
 import os
 
@@ -74,6 +74,9 @@ class GazeDataReader:
             os.path.join(self.base_path, knowledge_file),           # ./knowledge.csv
             os.path.join(self.base_path, "..", knowledge_file),     # ../knowledge.csv
             os.path.join(self.base_path, "../..", knowledge_file),  # ../../knowledge.csv
+            os.path.join(self.base_path, "sample_data", knowledge_file),         # ./sample_data/knowledge.csv
+            os.path.join(self.base_path, "..", "sample_data", knowledge_file),   # ../sample_data/knowledge.csv
+            os.path.join(self.base_path, "../..", "sample_data", knowledge_file) # ../../sample_data/knowledge.csv
         ]
         
         for knowledge_path in possible_paths:
@@ -155,7 +158,7 @@ class GazeDataReader:
         self.sessions[session_key] = session
         
         print(f"✅ Session {session_key} loaded successfully")
-        print(f"   Item sequence length: {len(session['item_sequence'])}")
+        print(f"   Grid positions processed: {len(session['f'])} timepoints")
         print(f"   Semantic sequence shape: {session['semantic_attribute_seq'].shape}")
         
         return session
@@ -198,78 +201,222 @@ class GazeDataReader:
         print(f"Loaded item layout: {layout.shape}")
         return layout
     
-    def gaze_to_items(self, gaze_data: np.ndarray, grid_size: Tuple[int, int] = (3, 4)) -> np.ndarray:
+    def gaze_to_items(self, gaze_data: np.ndarray) -> np.ndarray:
         """
-        Convert gaze coordinates to item indices
+        Convert gaze coordinates to grid positions (1-12) using the exact LoadGaze.m algorithm
         
         Args:
-            gaze_data: Gaze tracking data (timepoints × 5)
-            grid_size: Grid layout (rows, cols) - default 3×4
+            gaze_data: Gaze tracking data (timepoints × 5: timestamp, right_x, right_y, left_x, left_y)
             
         Returns:
-            Item sequence (timepoints,) with item indices (1-12) or 0 for invalid
+            Grid position sequence (timepoints,) with positions 1-12 or -1 for invalid
             
-        Approximates LoadGaze.m functionality for item identification
+        Exact translation of LoadGaze.m functionality
         """
-        rows, cols = grid_size
-        n_items = rows * cols
+        timestamp = gaze_data[:, 0]
+        gaze = gaze_data[:, 1:]
         
-        # Extract gaze coordinates (use right eye, fallback to left eye)
-        x_coords = np.where(gaze_data[:, 1] != -1, gaze_data[:, 1], gaze_data[:, 3])
-        y_coords = np.where(gaze_data[:, 2] != -1, gaze_data[:, 2], gaze_data[:, 4])
+        # Extract x and y coordinates (columns 1,3 for x and 2,4 for y)
+        x = gaze[:, [0, 2]]  # right_x, left_x
+        y = gaze[:, [1, 3]]  # right_y, left_y
+        
+        # Handle missing data (-1) by using the other eye
+        x_mask = x[:, 0] == -1
+        x[x_mask, 0] = x[x_mask, 1]
+        x[x_mask, 1] = x[x_mask, 0]
+        
+        y_mask = y[:, 0] == -1
+        y[y_mask, 0] = y[y_mask, 1]
+        y[y_mask, 1] = y[y_mask, 0]
+        
+        # Average the two eyes
+        x = np.mean(x, axis=1)
+        y = np.mean(y, axis=1)
+        
+        # Grid parameters: 3 rows × 4 columns
+        vN = 3  # vertical (rows)
+        cN = 4  # horizontal (columns)
         
         # Convert normalized coordinates to grid positions
-        item_sequence = np.zeros(len(gaze_data), dtype=int)
+        # x coordinate: 1/4 intervals, y coordinate: 1/3 intervals
+        target_seq = np.floor(y * vN) * cN + np.floor(x * cN) + 1
         
-        for t in range(len(gaze_data)):
-            if x_coords[t] != -1 and y_coords[t] != -1:
-                # Convert normalized coordinates (0-1) to grid indices
-                col = int(x_coords[t] * cols)
-                row = int(y_coords[t] * rows)
-                
-                # Ensure within bounds
-                col = max(0, min(col, cols - 1))
-                row = max(0, min(row, rows - 1))
-                
-                # Convert to item index (1-based)
-                item_sequence[t] = row * cols + col + 1
+        # Mark invalid coordinates (outside 0-1 range) as -1
+        invalid_mask = (x < 0) | (x > 1) | (y < 0) | (y > 1)
+        target_seq[invalid_mask] = -1
+        
+        return target_seq.astype(int)
+    
+    def process_target_duration(self, gaze_data: np.ndarray, target_seq: np.ndarray, 
+                               threshold_ms: float = 150.0) -> np.ndarray:
+        """
+        Process target sequence with duration filtering
+        Exact translation of the duration processing in LoadGaze.m
+        
+        Args:
+            gaze_data: Original gaze data with timestamps
+            target_seq: Target sequence from gaze_to_items
+            threshold_ms: Minimum duration threshold in milliseconds (default: 150ms)
+            
+        Returns:
+            Filtered duration-based sequence [target_id, duration]
+        """
+        timestamp = gaze_data[:, 0].copy()
+        
+        # Normalize timestamp and convert to 100ms units
+        timestamp = timestamp - timestamp[0]
+        timestamp = timestamp / 1000 / 100  # Convert to 100ms units
+        
+        # Remove invalid targets
+        valid_mask = target_seq >= 0
+        timestamp = timestamp[valid_mask]
+        target_seq = target_seq[valid_mask]
+        
+        if len(target_seq) == 0:
+            return np.array([]).reshape(0, 2)
+        
+        # Find segments where target changes
+        target_changes = np.diff(np.concatenate([[0], target_seq])) != 0
+        change_indices = np.where(target_changes)[0]
+        
+        if len(change_indices) == 0:
+            return np.array([]).reshape(0, 2)
+        
+        # Create target_tb_te: [target, start_time, end_time]
+        target_tb_te = []
+        for i in range(len(change_indices)):
+            start_idx = change_indices[i]
+            end_idx = change_indices[i + 1] if i + 1 < len(change_indices) else len(target_seq)
+            
+            target_id = target_seq[start_idx]
+            start_time = timestamp[start_idx]
+            end_time = timestamp[end_idx - 1] if end_idx > start_idx else start_time
+            
+            target_tb_te.append([target_id, start_time, end_time])
+        
+        if len(target_tb_te) == 0:
+            return np.array([]).reshape(0, 2)
+            
+        target_tb_te = np.array(target_tb_te)
+        
+        # Calculate durations
+        target_dur = target_tb_te[:, 2] - target_tb_te[:, 1]
+        
+        # Apply threshold filter (150ms = 1.5 in 100ms units)
+        threshold_units = threshold_ms / 100.0
+        valid_duration = target_dur >= threshold_units
+        target_tb_te = target_tb_te[valid_duration]
+        
+        if len(target_tb_te) == 0:
+            return np.array([]).reshape(0, 2)
+        
+        # Merge consecutive identical targets
+        T = len(target_tb_te)
+        t = 1
+        while t < T:
+            if target_tb_te[t, 0] == target_tb_te[t-1, 0]:
+                # Merge: extend end time of previous segment
+                target_tb_te[t-1, 2] = target_tb_te[t, 2]
+                # Remove current segment
+                target_tb_te = np.delete(target_tb_te, t, axis=0)
+                T -= 1
             else:
-                item_sequence[t] = 0  # Invalid gaze
+                t += 1
         
-        return item_sequence
+        # Final result: [target_id, duration]
+        final_durations = target_tb_te[:, 2] - target_tb_te[:, 1]
+        target_dur_result = np.column_stack([target_tb_te[:, 0], final_durations])
+        
+        return target_dur_result
     
     def _process_session_data(self, gaze_data: np.ndarray, layout_data: np.ndarray,
                              user_id: int, task_id: int) -> dict:
         """
         Process raw gaze and layout data into semantic attributes
+        Exact translation of LoadGaze.m + ReadwithTimestamp.m processing
         
         Args:
             gaze_data: Raw gaze tracking data (timepoints × 5)
-            layout_data: Item layout data
+            layout_data: Item layout data from .list file
             user_id: User identifier
             task_id: Task identifier
             
         Returns:
             Processed session data dictionary
         """
-        # Convert gaze coordinates to item sequence
-        item_sequence = self.gaze_to_items(gaze_data)
+        # Load gaze sequence using LoadGaze.m equivalent
+        # First get grid positions (1-12), then apply duration processing
+        grid_positions = self.gaze_to_items(gaze_data)
+        target_duration = self.process_target_duration(gaze_data, grid_positions)
+        
+        # Extract task from first item (as in ReadwithTimestamp.m)
+        task = layout_data[0] // 100  # floor(cont(1)/100)
+        
+        # Create item list by removing task prefix
+        item_list = layout_data - task * 100  # list = cont - task * 100
+        
+        # Use filtered sequence from LoadGaze (target_duration contains [target_id, duration])
+        if len(target_duration) > 0:
+            f = target_duration[:, 0].astype(int)  # f = seq(:, 1)
+            dur = target_duration[:, 1]            # dur = seq(:, 2)
+        else:
+            f = np.array([], dtype=int)
+            dur = np.array([])
         
         # Ensure knowledge base is loaded
         if self.knowledge_base is None:
             self.load_knowledge_base()
         
-        # Convert item sequence to semantic attributes
-        semantic_seq = self.items_to_semantic_attributes(item_sequence)
+        # Create semantic_attribute_seq as in MATLAB: KB(list(f), :)'
+        # This is the key mapping: f indexes into item_list, then into KB
+        if len(f) > 0:
+            valid_indices = (f > 0) & (f <= len(item_list))
+            semantic_seq = np.zeros((self.knowledge_base.shape[1], len(f)), dtype=int)
+            
+            for t in range(len(f)):
+                if valid_indices[t]:
+                    list_idx = f[t] - 1  # Convert to 0-based index into item_list
+                    if 0 <= list_idx < len(item_list):
+                        kb_idx = item_list[list_idx] - 1  # Convert to 0-based index into KB
+                        if 0 <= kb_idx < self.knowledge_base.shape[0]:
+                            semantic_seq[:, t] = self.knowledge_base[kb_idx, :]
+        else:
+            semantic_seq = np.zeros((self.knowledge_base.shape[1], 0), dtype=int)
+        
+        # Create semantic_attributes: KB(list, :)
+        semantic_attributes = np.zeros((len(item_list), self.knowledge_base.shape[1]), dtype=int)
+        for i, item in enumerate(item_list):
+            kb_idx = item - 1  # Convert to 0-based
+            if 0 <= kb_idx < self.knowledge_base.shape[0]:
+                semantic_attributes[i, :] = self.knowledge_base[kb_idx, :]
+        
+        # Add candidate information based on task (as in ReadwithTimestamp.m)
+        if task == 1:
+            candidate = [1, 2]
+        elif task == 2:
+            candidate = [8, 11] 
+        elif task == 3:
+            candidate = [3, 4]
+        else:
+            candidate = []
+        
+        # Calculate total duration in seconds (as in MATLAB)
+        total_duration = (gaze_data[-1, 0] - gaze_data[0, 0]) / 1000000  # ms to seconds
         
         session_data = {
-            'user_id': user_id,
-            'task_id': task_id,
-            'raw_gaze': gaze_data,
-            'layout_data': layout_data,
-            'item_sequence': item_sequence,
-            'semantic_attribute_seq': semantic_seq,
-            'n_timepoints': len(item_sequence)
+            'f': f,                                    # Filtered item sequence
+            'dur': dur,                               # Duration sequence  
+            'list': item_list,                        # Item list (task prefix removed)
+            'task': task,                             # Task number
+            'usr': user_id,                           # User ID
+            'totalduration': total_duration,          # Total session duration
+            'semantic_attribute_seq': semantic_seq,   # KB(list(f), :)'
+            'semantic_attributes': semantic_attributes, # KB(list, :)
+            'candidate': candidate,                   # Task-specific candidates
+            'raw_gaze': gaze_data,                    # Original gaze data
+            'layout_data': layout_data,               # Original layout data
+            'target_duration': target_duration,       # Duration-filtered sequence
+            'n_timepoints': len(f)                    # Number of timepoints
         }
         
         return session_data
@@ -333,9 +480,10 @@ class GazeDataReader:
     def items_to_semantic_attributes(self, item_sequence: np.ndarray) -> np.ndarray:
         """
         Convert item sequence to semantic attribute sequence using knowledge base
+        Handles the actual item IDs from layout (e.g., 101, 103, etc.)
         
         Args:
-            item_sequence: Array of item indices (1-based, 0 for invalid)
+            item_sequence: Array of item indices or -1 for invalid
             
         Returns:
             Semantic attribute sequence (features × time) using offset encoding
@@ -357,17 +505,21 @@ class GazeDataReader:
         semantic_seq = np.zeros((total_features, n_timepoints))
         
         for t in range(n_timepoints):
-            item_idx = item_sequence[t]
-            if item_idx > 0 and item_idx <= n_items:  # Valid item (1-based)
-                # Get attributes for this item
-                item_attrs = self.knowledge_base[item_idx - 1, :]  # Convert to 0-based
+            item_id = item_sequence[t]
+            if item_id > 0:  # Valid item (not -1)
+                # Extract knowledge base index (remove task prefix)
+                knowledge_idx = item_id % 100  # e.g., 101 -> 1, 103 -> 3
                 
-                # Encode using offsets
-                for attr in range(n_attributes):
-                    attr_value = item_attrs[attr]
-                    if attr_value > 0:  # Valid attribute value
-                        feature_idx = offsets[attr] + attr_value - 1  # Convert to 0-based
-                        semantic_seq[feature_idx, t] = 1
+                if 1 <= knowledge_idx <= n_items:  # Valid knowledge index
+                    # Get attributes for this item (convert to 0-based)
+                    item_attrs = self.knowledge_base[knowledge_idx - 1, :]
+                    
+                    # Encode using offsets
+                    for attr in range(n_attributes):
+                        attr_value = item_attrs[attr]
+                        if attr_value > 0:  # Valid attribute value
+                            feature_idx = offsets[attr] + attr_value - 1  # Convert to 0-based
+                            semantic_seq[feature_idx, t] = 1
         
         return semantic_seq
     
@@ -456,13 +608,28 @@ class GazeDataReader:
         csv_files = []
         list_files = []
         
-        # Check if there are any data files in the base directory
-        if os.path.exists(self.base_path):
-            for file in os.listdir(self.base_path):
-                if file.endswith('.csv') and not file == 'knowledge.csv':
-                    csv_files.append(file)
-                elif file.endswith('.list'):
-                    list_files.append(file)
+        # Check multiple possible directories
+        search_dirs = [
+            self.base_path,
+            os.path.join(self.base_path, "sample_data"),
+            os.path.join(self.base_path, "..", "sample_data"),
+            os.path.join(self.base_path, "../..", "sample_data")
+        ]
+        
+        data_dir = None
+        for search_dir in search_dirs:
+            if os.path.exists(search_dir):
+                for file in os.listdir(search_dir):
+                    if file.endswith('.csv') and not file == 'knowledge.csv':
+                        csv_files.append(file)
+                        data_dir = search_dir
+                    elif file.endswith('.list'):
+                        list_files.append(file)
+                        data_dir = search_dir
+                
+                if csv_files and list_files:
+                    print(f"Found data files in: {search_dir}")
+                    break
         
         if not csv_files or not list_files:
             print("No data files found. Creating sample session data.")
@@ -475,9 +642,9 @@ class GazeDataReader:
         semantic_attributes = {}
         
         # Process the first available pair for demonstration
-        if csv_files and list_files:
-            csv_file = os.path.join(self.base_path, csv_files[0])
-            list_file = os.path.join(self.base_path, list_files[0])
+        if csv_files and list_files and data_dir:
+            csv_file = os.path.join(data_dir, csv_files[0])
+            list_file = os.path.join(data_dir, list_files[0])
             
             try:
                 # Extract task from first item in list
