@@ -1,138 +1,189 @@
 # AspectEstimation - Python Implementation
 
-This is a Python port of the MATLAB AspectEstimation code, implementing probabilistic Latent Semantic Analysis (pLSA) for aspect estimation from gaze tracking data.
+This is a Python port of the MATLAB AspectEstimation code, implementing a **four-layer probabilistic model** for aspect estimation.
 
-## Original MATLAB Implementation
+## Four-Layer Architecture
 
-The original MATLAB code implements:
-- pLSA (probabilistic Latent Semantic Analysis) for topic modeling
-- Likelihood calculation for attribute sequences
-- EM algorithm for parameter estimation
-- Data processing for gaze tracking experiments
+This implementation uses the correct four-layer probabilistic model:
 
-## Python Implementation Structure
+```
+Session → Topic → Feature → Observation
+```
+
+### Key Architecture Details
+
+1. **Session → Topic**: `P(z|s)` - Learned distribution mapping sessions to latent topics
+2. **Topic → Feature**: `P(v|z)` - Learned distribution mapping topics to features  
+3. **Feature → Observation**: `P(o|v)` - **Fixed external mapping** (not learned)
+
+**Important**: The Feature → Observation layer is externally provided and remains fixed during training. Only the Session → Topic and Topic → Feature distributions are learned through the EM algorithm.
+
+This follows the user specification: *"４層構造ですが，Session-->Topic-->Feature-->Observation です．Feature --> Observation が外部からの入力によって与えられ，その確率は学習時に固定（学習もなし）です．"*
+
+## Quick Start
+
+```bash
+# Activate virtual environment
+source aspectmodel/bin/activate
+
+# Run four-layer demonstration
+python main_four_layer.py
+
+# Run with custom parameters
+python main_four_layer.py --sessions 10 --features 20 --max-topics 5 --save
+
+# Run tests
+python test_four_layer.py
+```
+
+## Project Structure
 
 ```
 python-ver/
-├── aspectmodel/          # Virtual environment
+├── aspectmodel/              # Virtual environment
 ├── src/
 │   ├── models/
-│   │   ├── __init__.py
-│   │   └── plsa.py      # pLSA implementation (translated from plsa.m, estep.m, mstep.m)
+│   │   ├── plsa.py          # Four-layer pLSA implementation
+│   │   └── segments.py      # Segment processing utilities
 │   ├── data/
-│   │   ├── __init__.py
-│   │   └── data_loader.py # Data loading utilities (translated from LoadGaze.m, calc_lkh.m)
+│   │   └── data_loader.py   # Data loading utilities
 │   └── utils/
-│       ├── __init__.py
-│       └── math_utils.py  # Mathematical utilities (translated from normalize.m, multi_choose_prob.m)
-├── main.py              # Main execution script
-├── requirements.txt     # Python dependencies
-└── README.md           # This file
+│       └── math_utils.py    # Mathematical utilities
+├── main_four_layer.py       # Main demonstration script
+├── main_four_layer_old.py   # Previous implementation (archived)
+├── test_four_layer.py       # Unit tests for 4-layer model
+├── results_four_layer/      # Generated results
+└── requirements.txt         # Python dependencies
 ```
 
-## Setup
+## Architecture Evolution
 
-1. Activate the virtual environment:
-```bash
-source ./aspectmodel/bin/activate  # Linux/Mac
-# or
-./aspectmodel/Scripts/activate     # Windows
+### ✅ Current Implementation
+- **Session → Topic → Feature → Observation**
+- Feature → Observation is **externally fixed** and provided
+- Only 2 distributions are learned: P(z|s) and P(v|z)
+- Mathematically correct four-layer model
+
+### Previous Approach (main_four_layer.py)
+- Session → Segment → Topic → Vocabulary
+- Segment-based approach
+- All layers were learned
+
+## Core Classes
+
+### `FourLayerPLSA`
+The main class implementing the four-layer model:
+
+```python
+from src.models.plsa import FourLayerPLSA
+
+# Initialize model
+model = FourLayerPLSA(n_topics=3)
+
+# Set fixed observation mapping (externally provided)
+model.set_observation_model(p_o_v_matrix)
+
+# Train model (learns only P(z|s) and P(v|z))
+params, history = model.fit(sessions)
 ```
 
-2. Install dependencies:
-```bash
-pip install -r requirements.txt
+### Key Methods
+- `set_observation_model(p_o_v)`: Set the fixed Feature → Observation mapping
+- `fit(sessions)`: Train the model using EM algorithm
+- Returns learned parameters: `{'zs': P(z|s), 'vz': [P(v|z) for each topic]}`
+
+## Training Results
+
+The model generates the following outputs:
+
+- `P(z|s)`: Session-topic distributions (sessions × topics)
+- `P(v|z)`: Topic-feature distributions (list of feature distributions per topic)
+- Training likelihood histories showing convergence
+- Parameter files (`.npz` format)
+- CSV exports of topic-feature distributions for analysis
+
+## Example Usage
+
+```python
+import numpy as np
+from src.models.plsa import FourLayerPLSA
+
+# Create sample data
+sessions = [np.random.multinomial(1, [1/15]*15, 30).T for _ in range(5)]
+
+# Create observation mapping (identity for simplicity)
+p_o_v = np.eye(15)
+
+# Train model
+model = FourLayerPLSA(n_topics=2)
+model.set_observation_model(p_o_v)
+params, history = model.fit(sessions)
+
+print(f"Session-topic shape: {params['zs'].shape}")
+print(f"Number of topic distributions: {len(params['vz'])}")
+print(f"Final likelihood: {history[-1]:.4f}")
 ```
-
-## Usage
-
-### Full Pipeline
-```bash
-python main.py --mode full
-```
-
-### Likelihood Calculation Only
-```bash
-python main.py --mode likelihood
-```
-
-### pLSA Training Only
-```bash
-python main.py --mode plsa --topics 5
-```
-
-## Key Components
-
-### 1. pLSA Model (`src/models/plsa.py`)
-- **PLSA class**: Main model implementation
-- **fit()**: EM algorithm training (translated from `plsa.m`)
-- **_e_step()**: Expectation step (translated from `estep.m`)
-- **_m_step()**: Maximization step (translated from `mstep.m`)
-- **train_multiple_runs()**: Multiple initialization training (translated from `train.m`)
-
-### 2. Data Processing (`src/data/data_loader.py`)
-- **GazeDataLoader**: Load and process gaze tracking data
-- **LikelihoodCalculator**: Calculate likelihood for attribute sequences (translated from `calc_lkh.m`)
-- **load_gazedata()**: Load MATLAB .mat files (equivalent to `load gazedata`)
-
-### 3. Mathematical Utilities (`src/utils/math_utils.py`)
-- **normalize()**: Matrix normalization (translated from `normalize.m`)
-- **exact_prob()**: Exact probability calculation (translated from `multi_choose_prob.m`)
-- **generate_all_pairs()**: Generate combination patterns (translated from allpair generation)
-
-## Data Format
-
-The Python implementation expects the same data format as the MATLAB version:
-- `gazedata.mat`: Main data file containing semantic attributes and sequences
-- `semantic_attributes`: Cell array of attribute values per session
-- `semantic_attribute_seq`: Sequence of attribute observations
-
-## Algorithm Details
-
-### pLSA (Probabilistic Latent Semantic Analysis)
-The implementation follows the standard pLSA algorithm:
-
-1. **Initialization**: Random initialization of P(z|s) and P(v|z)
-2. **E-step**: Calculate posterior probabilities P(z|v,s)
-3. **M-step**: Update parameters to maximize likelihood
-4. **Convergence**: Iterate until relative change in log-likelihood < threshold
-
-### Likelihood Calculation
-For sliding window analysis:
-1. Generate all possible combinations for window size
-2. Calculate exact probabilities for each combination
-3. Apply sliding window over attribute sequences
-4. Compute likelihood at each time point
-
-## Differences from MATLAB Version
-
-- **Array indexing**: Python uses 0-based indexing vs MATLAB's 1-based
-- **Matrix operations**: Uses NumPy broadcasting instead of MATLAB's repmat
-- **Data structures**: Python lists and dictionaries instead of MATLAB cell arrays
-- **File I/O**: Uses scipy.io for .mat file compatibility
-- **Error handling**: More robust error handling and validation
-
-## Testing
-
-The implementation includes sample data generation for testing when the original .mat files are not available.
-
-## Performance Notes
-
-- Uses NumPy for efficient numerical operations
-- Vectorized operations where possible to maintain performance
-- Memory-efficient implementation for large datasets
 
 ## Dependencies
 
-- **numpy**: Numerical computing
-- **scipy**: Scientific computing and .mat file I/O
-- **matplotlib**: Plotting (for future visualization features)
-- **pandas**: Data manipulation
-- **scikit-learn**: Additional machine learning utilities
+- Python 3.12+
+- NumPy 2.3+
+- SciPy
+- matplotlib  
+- pandas
+- scikit-learn
 
-## Future Enhancements
+## Virtual Environment
 
-- Visualization functions for results analysis
-- Parameter tuning utilities
-- Cross-validation functionality
-- Integration with modern deep learning frameworks
+The project uses a dedicated virtual environment in `aspectmodel/`:
+
+```bash
+# Activate environment (Linux/WSL)
+source aspectmodel/bin/activate
+
+# Activate environment (Windows)
+aspectmodel\Scripts\activate
+
+# Install additional packages if needed
+pip install package_name
+```
+
+## Testing
+
+Run the test suite to verify the implementation:
+
+```bash
+# Test the corrected four-layer implementation
+python test_four_layer.py
+
+# Expected output:
+# - Training completes successfully
+# - Likelihood values improve over iterations
+# - Parameter shapes are correct
+# - Multiple topic configurations work
+```
+
+## Mathematical Foundation
+
+The four-layer model optimizes:
+
+```
+P(o_t | s) = Σ_z Σ_v P(z|s) * P(v|z) * P(o_t|v)
+```
+
+Where:
+- `P(z|s)`: Session → Topic (learned)
+- `P(v|z)`: Topic → Feature (learned)  
+- `P(o_t|v)`: Feature → Observation (fixed, externally provided)
+
+The EM algorithm updates only the learnable parameters while keeping `P(o_t|v)` fixed throughout training.
+
+## Translation from MATLAB
+
+This Python implementation is translated from the original MATLAB files:
+- `plsa.m` → `src/models/plsa.py`
+- `estep.m`, `mstep.m` → EM algorithm methods
+- `learn_aspects_from_mask.m` → Main training pipeline
+- Mathematical utilities from various `.m` files
+
+The key insight was recognizing that the MATLAB implementation used a four-layer model with a fixed observation layer, not a fully learnable four-layer model.

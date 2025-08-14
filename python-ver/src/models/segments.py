@@ -202,25 +202,31 @@ class SessionProcessor:
     def create_session_all(self, semantic_attribute_seq: List[np.ndarray], 
                           N_value: np.ndarray) -> List[np.ndarray]:
         """
-        Create concatenated session data
+        Create concatenated session data with proper vocabulary mapping
         
         Args:
             semantic_attribute_seq: List of attribute sequences per session
             N_value: Maximum values for each attribute
             
         Returns:
-            List of session matrices
+            List of session matrices with unified vocabulary space
             
         Note:
             Translated from the session_all creation in learn_aspects_from_mask.m
+            Each attribute type gets mapped to a different value range to avoid overlap:
+            - Attribute 1: values 1-N_value[0] → positions 1 to N_value[0]
+            - Attribute 2: values 1-N_value[1] → positions N_value[0]+1 to N_value[0]+N_value[1]
+            - etc.
         """
         S = len(semantic_attribute_seq)
         session_all = []
         
+        print(f"Creating session_all with N_value: {N_value}")
+        
         for s in range(S):
-            tmp = semantic_attribute_seq[s].copy()
+            tmp = semantic_attribute_seq[s].copy()  # (attributes x timepoints)
             
-            # Adjust attribute value ranges (offset to avoid overlap)
+            # Apply offsets to each attribute type (following MATLAB code exactly)
             if tmp.shape[0] >= 2:
                 tmp[1, :] = tmp[1, :] + 3   # attribute type 2: value range [4--6]
             if tmp.shape[0] >= 3:
@@ -230,15 +236,19 @@ class SessionProcessor:
             if tmp.shape[0] >= 5:
                 tmp[4, :] = tmp[4, :] + 12  # attribute type 5: value range [13--15]
             
-            # Create binary matrix
-            tmp2 = np.zeros((int(np.sum(N_value)), tmp.shape[1]))
+            # Create binary matrix (one-hot encoding)
+            vocab_size = int(np.sum(N_value))
+            tmp2 = np.zeros((vocab_size, tmp.shape[1]))
+            
             for t in range(tmp.shape[1]):
                 for attr_idx in range(tmp.shape[0]):
-                    if tmp[attr_idx, t] > 0:  # Valid attribute value
-                        tmp2[int(tmp[attr_idx, t]) - 1, t] = 1
+                    attr_value = int(tmp[attr_idx, t])
+                    if 1 <= attr_value <= vocab_size:  # Valid attribute value (1-indexed)
+                        tmp2[attr_value - 1, t] = 1  # Convert to 0-indexed
             
             session_all.append(tmp2)
         
+        print(f"Created session_all with vocabulary size: {vocab_size}")
         return session_all
     
     def create_segsessions(self, session_all: List[np.ndarray], 
