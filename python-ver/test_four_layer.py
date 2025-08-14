@@ -112,6 +112,18 @@ def test_with_segments():
             if history:
                 print(f"Final log-likelihood: {history[-1]:.4f}")
                 
+            # Save results to results directory
+            os.makedirs("results", exist_ok=True)
+            result_file = f"results/test_synthetic_topic{n_topics}.npz"
+            
+            np.savez(result_file,
+                    L=np.array([history[-1]]),
+                    params=params,
+                    history=history,
+                    allow_pickle=True)
+            
+            print(f"Results saved to: {result_file}")
+                
             # Display parameter shapes
             print(f"P(z|s) shape: {params['zs'].shape}")
             print(f"P(v|z) topics: {len(params['vz'])}")

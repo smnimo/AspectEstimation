@@ -57,11 +57,25 @@ class ComprehensiveVisualizationTest:
                 print(f"   ⚠️ Real data not available: {e}")
                 print("   📝 Using mock data for testing")
                 
-                # Create mock session data
+                # Create mock session data with 15D one-hot features
+                # Mock 15-dimensional one-hot encoded features (5 attributes × 3 values)
+                n_timepoints = 30
+                mock_onehot = np.zeros((15, n_timepoints))
+                
+                # Create realistic one-hot pattern: exactly 5 ones per timepoint
+                np.random.seed(42)
+                for t in range(n_timepoints):
+                    # For each attribute (0-4), randomly select one of 3 values (0-2)
+                    for attr in range(5):
+                        value = np.random.randint(0, 3)  # 0, 1, or 2
+                        feature_idx = attr * 3 + value
+                        mock_onehot[feature_idx, t] = 1.0
+                
                 self.session = {
-                    'semantic_attribute_seq': np.random.multinomial(1, [0.2]*5, 30),
-                    'f': list(range(30)),
-                    'gaze_seq': np.random.rand(30, 2),
+                    'semantic_attribute_seq': np.random.randint(1, 4, (5, n_timepoints)),  # Old 5D for compatibility
+                    'semantic_attribute_seq_onehot': mock_onehot,  # New 15D one-hot
+                    'f': list(range(n_timepoints)),
+                    'gaze_seq': np.random.rand(n_timepoints, 2),
                     'user': 1,
                     'task': 1,
                     'totalduration': 45.2
@@ -194,19 +208,27 @@ class ComprehensiveVisualizationTest:
             print(f"      ❌ Gaze trajectory failed: {e}")
             results.append(False)
         
-        # Test 8: Aspect correlation circles (plot_aspect.R)
+        # Test 8: Aspect correlation circles (plot_aspect.R) - Updated for 15D features
         try:
-            print("   ⭕ Aspect correlation circles (plot_aspect.R)...")
+            print("   ⭕ Aspect correlation circles (15D features)...")
             
-            # Create probability matrix [0,1] with white-to-blue colormap
+            # Create 15×N_topics probability matrix representing Topic→Feature distributions
+            n_topics = 3
             np.random.seed(42)
-            mock_aspect_matrix = np.random.rand(12, 8)  # Probability values [0,1]
             
-            feature_names = [
-                'Color', 'Shape', 'Texture', 'Size', 
-                'Pattern', 'Material', 'Function', 'Category',
-                'Brightness', 'Contrast', 'Complexity', 'Familiarity'
-            ]
+            # Create realistic Topic→Feature probability matrix (15 features × 3 topics)
+            mock_aspect_matrix = np.random.rand(15, n_topics)  
+            
+            # Normalize each column (topic) to sum to 1
+            for t in range(n_topics):
+                mock_aspect_matrix[:, t] = mock_aspect_matrix[:, t] / np.sum(mock_aspect_matrix[:, t])
+            
+            # Create feature names for 15D one-hot features
+            feature_names = []
+            for attr in range(5):
+                for value in range(1, 4):  # Values 1, 2, 3
+                    feature_names.append(f'Attr{attr+1}_Val{value}')
+            
             
             fig = self.plotter.plot_aspect_correlation_circles(
                 aspect_matrix=mock_aspect_matrix,
@@ -214,7 +236,7 @@ class ComprehensiveVisualizationTest:
                 save_path=f"{self.figures_dir}/aspect_correlations_test.png"
             )
             plt.close(fig)
-            print("      ✅ Aspect correlations completed (colorbar: 0=white, 1=blue)")
+            print("      ✅ Aspect correlations completed (15D features, colorbar: 0=white, 1=blue)")
             results.append(True)
         except Exception as e:
             print(f"      ❌ Aspect correlations failed: {e}")
@@ -241,20 +263,32 @@ class ComprehensiveVisualizationTest:
             
             print(f"   📚 Knowledge base shape: {kb.shape}")
             
-            # Train models with different topic numbers
+            # Train models with different topic numbers using 15D one-hot features
             likelihood_results = {}
             
             for n_topics in [2, 3]:
-                print(f"   🔬 Training {n_topics}-topic model...")
+                print(f"   🔬 Training {n_topics}-topic model with 15D features...")
                 
                 model = FourLayerPLSA(n_topics=n_topics)
-                model.set_observation_model(kb)
                 
-                # Use session data or create mock data
-                if 'semantic_attribute_seq' in self.session:
-                    sessions = [self.session['semantic_attribute_seq']]
+                # Set identity observation model for 15D features (direct modeling)
+                n_features = 15  # 5 attributes × 3 values
+                p_o_v = np.eye(n_features)
+                model.set_observation_model(p_o_v)
+                
+                # Use 15D one-hot encoded features
+                if 'semantic_attribute_seq_onehot' in self.session:
+                    sessions = [self.session['semantic_attribute_seq_onehot']]
+                    print(f"   📊 Using real 15D one-hot features: {self.session['semantic_attribute_seq_onehot'].shape}")
                 else:
-                    sessions = [np.random.multinomial(1, [0.2]*5, 20)]
+                    # Create mock 15D one-hot data
+                    mock_15d = np.zeros((15, 20))
+                    for t in range(20):
+                        for attr in range(5):
+                            value = np.random.randint(0, 3)
+                            feature_idx = attr * 3 + value
+                            mock_15d[feature_idx, t] = 1.0
+                    sessions = [mock_15d]
                 
                 params, history = model.fit(sessions, train_lim=1e-4, max_itr=5)
                 
@@ -284,11 +318,19 @@ class ComprehensiveVisualizationTest:
         print("\n5️⃣ Testing Comprehensive Report...")
         
         try:
-            # Create comprehensive data structure
+            # Create comprehensive data structure with 15D features
+            # Create mock 15D one-hot session data
+            mock_session_15d = np.zeros((15, 30))
+            for t in range(30):
+                for attr in range(5):
+                    value = np.random.randint(0, 3)
+                    feature_idx = attr * 3 + value
+                    mock_session_15d[feature_idx, t] = 1.0
+            
             mock_data = {
-                'sessions': [{'semantic_attribute_seq': np.random.multinomial(1, [0.2]*5, 30)}],
+                'sessions': [{'semantic_attribute_seq_onehot': mock_session_15d}],
                 'models': [None],  # Placeholder
-                'params': [{'vz': [np.random.rand(5, 8)]}],  # Probability values [0,1]
+                'params': [{'vz': [np.random.rand(15, 3)]}],  # 15D features × 3 topics
                 'history': [[100, 90, 85, 82, 80]],  # Mock likelihood history
                 'gaze_trajectories': {
                     'session_id': 'comprehensive_test',

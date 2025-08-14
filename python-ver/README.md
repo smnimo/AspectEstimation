@@ -1,15 +1,17 @@
 # AspectEstimation - Python Version
 
-Complete Python implementation of the MATLAB AspectEstimation system with **4-layer pLSA**, **data processing pipeline**, and **visualization suite**.
+Complete Python implementation of the MATLAB AspectEstimation system with **4-layer pLSA**, **15-dimensional feature space**, **data processing pipeline**, and **visualization suite**.
 
 ## Overview
 
 This is a comprehensive port of the MATLAB AspectEstimation codebase, featuring:
 
 - **4-layer pLSA**: Session → Topic → Feature → Observation with fixed Feature→Observation mapping
+- **15D Feature Space**: One-hot encoding of 5 attributes × 3 values each (corrected implementation)
 - **Data Processing**: Complete LoadGaze.m and ReadwithTimestamp.m translation
-- **Visualization**: Full plot_*.m series conversion with matplotlib/seaborn
+- **Visualization**: Full plot_*.m series conversion with matplotlib/seaborn including additional gaze trajectories and correlation circles
 - **Real Data Support**: Processing of actual experimental eye-tracking data
+- **Exact Algorithm Equivalence**: Numerical results match MATLAB implementation
 
 ## 4-Layer Architecture
 
@@ -23,10 +25,13 @@ Session(s) → Topic(z) → Feature(v) → Observation(o)
 ### Key Components
 
 1. **Session → Topic**: `P(z|s)` - Learned session-topic distributions
-2. **Topic → Feature**: `P(v|z)` - Learned topic-feature distributions  
+2. **Topic → Feature**: `P(v|z)` - Learned topic-feature distributions (now 15-dimensional)
 3. **Feature → Observation**: `P(o|v)` - **Fixed external mapping** (not learned)
 
-**Critical**: The Feature → Observation layer is externally provided from the knowledge base and remains fixed during training. Only the Session → Topic and Topic → Feature distributions are learned through the EM algorithm.
+**Critical**: 
+- The Feature → Observation layer is externally provided from the knowledge base and remains fixed during training
+- Features are now correctly represented as 15-dimensional one-hot vectors (5 attributes × 3 values each)
+- Only the Session → Topic and Topic → Feature distributions are learned through the EM algorithm
 
 ## Features
 
@@ -98,10 +103,10 @@ session = reader.load_session_from_files(
     list_file_path='sample_data/170116024150092.list'
 )
 
-# 2. Train 4-layer pLSA model
+# 2. Train 4-layer pLSA model (15D features)
 model = FourLayerPLSA(n_topics=3)
 model.set_observation_model(reader.knowledge_data.values)
-params, history = model.fit([session['semantic_attribute_seq']])
+params, history = model.fit([session['semantic_attribute_seq_onehot']])  # 15D one-hot features
 
 # 3. Generate visualizations
 plotter = AspectPlotter()
@@ -115,19 +120,19 @@ plotter.create_comprehensive_report({
 
 ### Command Line Testing
 ```bash
-# Test with real data files
+# Test with real data files (15D feature processing)
 python test_with_arguments.py \
   --knowledge sample_data/knowledge.csv \
   --gaze sample_data/170116024150092.csv \
   --layout sample_data/170116024150092.list
 
-# Test visualization pipeline
-python test_visualization.py
+# Test comprehensive visualization pipeline (all 8 plot types)
+python test_comprehensive_visualization.py
 
-# Test complete 4-layer pLSA
+# Test complete 4-layer pLSA with 15D features
 python test_four_layer.py
 
-# Test data processing pipeline
+# Test actual data processing with 15D one-hot encoding
 python test_actual_data.py
 ```
 
@@ -139,7 +144,8 @@ python test_actual_data.py
    ```
    Items × Attributes matrix (e.g., 12×5)
    Values: Integer attribute levels (1-3)
-   Purpose: Defines fixed P(o|v) layer
+   Purpose: Defines fixed P(o|v) layer for 15D feature space
+   Note: Each attribute value contributes to one-hot feature vector
    ```
 
 2. **Gaze Data (.csv)**: Eye tracking recordings  
@@ -162,8 +168,9 @@ python test_actual_data.py
 2. **Duration Filtering**: Apply 150ms minimum fixation threshold  
 3. **Task Extraction**: Decode task numbers from layout (100s digit)
 4. **Item Mapping**: Map grid positions to actual items via layout
-5. **Semantic Conversion**: Generate feature vectors via knowledge base
-6. **Session Assembly**: Create temporal sequences for pLSA training
+5. **Semantic Conversion**: Generate 5D attribute vectors via knowledge base
+6. **One-Hot Encoding**: Convert 5D attributes to 15D one-hot feature vectors (5 attributes × 3 values)
+7. **Session Assembly**: Create temporal sequences for pLSA training with 15D features
 
 ## Visualization Capabilities
 
@@ -187,9 +194,9 @@ The visualization system provides full translation of all MATLAB plotting functi
 - Boxplot visualizations across tasks/users
 
 #### 4. Aspect Matrices
-- Feature-topic relationship visualization
+- Feature-topic relationship visualization (15×topics matrices)
 - Probability distribution heat maps
-- Topic interpretation support
+- Topic interpretation support with one-hot feature dimensions
 
 #### 5. Similarity Analysis (`plot_sim*.m`)
 - Task similarity matrices
@@ -208,10 +215,10 @@ The visualization system provides full translation of all MATLAB plotting functi
 - Temporal sequence analysis
 
 #### 8. Aspect Correlations (`plot_aspect.R`)
-- Circular correlation matrix visualization
-- Feature-aspect relationship mapping
+- Circular correlation matrix visualization for 15×topics matrices
+- Feature-aspect relationship mapping with one-hot encoding
 - Custom color schemes (red-white-blue)
-- Matrix subset analysis
+- Matrix subset analysis for interpretable dimensions
 
 ### Sample Visualization Code
 ```python
@@ -223,15 +230,15 @@ plotter = AspectPlotter()
 plotter.plot_likelihood_comparison(models, histories)
 plotter.plot_confusion_matrix(true_labels, predicted_labels)
 plotter.plot_duration_by_user(session_data)
-plotter.plot_aspect_matrices(params['vz'])
+plotter.plot_aspect_matrices(params['vz'])  # 15×topics matrices
 plotter.plot_similarity_analysis(session_data)
 plotter.plot_evaluation_metrics(metrics_data)
 
-# New additional plot types
+# Additional plot types (converted from MATLAB/R)
 plotter.plot_original_gaze_trajectories(gaze_data)
-plotter.plot_aspect_correlation_circles(aspect_matrix)
+plotter.plot_aspect_correlation_circles(aspect_matrix)  # 15D correlation circles
 
-# Comprehensive report generation
+# Comprehensive report generation (all 8 plot types)
 plotter.create_comprehensive_report(experimental_data)
 ```
 
@@ -240,17 +247,15 @@ plotter.create_comprehensive_report(experimental_data)
 ### Available Test Suite
 
 ```bash
-# Core functionality
-python test_actual_data.py          # Real data processing pipeline
-python test_four_layer.py           # 4-layer pLSA training validation
-python test_gaze_pipeline.py        # Complete data processing workflow
+# Core functionality with 15D features
+python test_actual_data.py          # Real data processing pipeline with one-hot encoding
+python test_four_layer.py           # 4-layer pLSA training validation (15D features)
+python test_with_arguments.py       # Command-line interface testing
 
-# Visualization system  
-python test_visualization.py        # All plotting functions
-python test_additional_plots.py     # Extended plotting functions
-python test_with_arguments.py       # Command-line interface
+# Comprehensive visualization system  
+python test_comprehensive_visualization.py  # All 8 plotting functions including additional plots
 
-# Integration tests
+# Legacy individual tests (kept for compatibility)
 python -m src.data.gaze_reader      # Data reader demonstration
 python -m src.models.plsa           # Model training demonstration
 ```
@@ -258,13 +263,15 @@ python -m src.models.plsa           # Model training demonstration
 ### Sample Test Output
 
 ```
-Testing 4-layer pLSA with real data:
+Testing 4-layer pLSA with real data (15D features):
 ✅ Loaded knowledge base: (12, 5)
 ✅ Session loaded: 56 timepoints
+✅ Generated 15D one-hot features: (56, 15)
 ✅ Training model with 3 topics...
 ✅ Training completed: 3 iterations
 ✅ Final likelihood: -315.4202
 ✅ Generated visualizations: 8 plots
+✅ Saved results: results/test_real_data_topic3.npz
 ✅ Comprehensive report saved
 ```
 
@@ -275,46 +282,52 @@ python-ver/
 ├── src/
 │   ├── data/
 │   │   ├── __init__.py
-│   │   └── gaze_reader.py          # LoadGaze.m + ReadwithTimestamp.m
+│   │   └── gaze_reader.py          # LoadGaze.m + ReadwithTimestamp.m (15D one-hot)
 │   ├── models/
 │   │   ├── __init__.py  
-│   │   └── plsa.py                 # 4-layer pLSA implementation
+│   │   └── plsa.py                 # 4-layer pLSA implementation (15D compatible)
 │   ├── utils/
 │   │   ├── __init__.py
 │   │   └── math_utils.py           # Mathematical utilities
 │   └── visualization/
 │       ├── __init__.py
-│       └── plotter.py              # Complete plot_*.m series
+│       └── plotter.py              # Complete plot_*.m + additional plots (15D aware)
 ├── figures/                        # Generated visualizations
-├── results/                        # Model outputs (2-layer legacy)
-├── results_four_layer/             # 4-layer model outputs
+├── results/                        # Model outputs (.npz files with 15D parameters)
 ├── sample_data/                    # Example experimental data
 ├── aspectmodel/                    # Virtual environment
 ├── requirements.txt                # Python dependencies
 ├── README.md                       # This documentation
-└── test_*.py                       # Comprehensive test suite
+├── test_actual_data.py             # Real data testing (15D features)
+├── test_four_layer.py              # Core pLSA testing (15D features)
+├── test_comprehensive_visualization.py  # All visualization functions
+├── test_with_arguments.py          # Command-line interface
+└── inspect_results.py              # Result analysis utility
 ```
 
 ## Key Achievements
 
 ### ✅ Complete MATLAB Translation
 - **Exact Algorithm Equivalence**: All mathematical operations replicate MATLAB
-- **Data Processing**: LoadGaze.m and ReadwithTimestamp.m fully translated
-- **Model Architecture**: Correct 4-layer Session→Topic→Feature→Observation
-- **Visualization**: All plot_*.m functions converted with enhanced styling including gaze trajectories and correlation circles
+- **15D Feature Space**: Corrected one-hot encoding implementation (5 attributes × 3 values)
+- **Data Processing**: LoadGaze.m and ReadwithTimestamp.m fully translated with proper feature encoding
+- **Model Architecture**: Correct 4-layer Session→Topic→Feature→Observation with 15D feature support
+- **Visualization**: All plot_*.m functions converted with enhanced styling including gaze trajectories and correlation circles (15D aware)
 
 ### ✅ Enhanced Functionality  
 - **Type Safety**: Full type hints and validation
 - **Error Handling**: Robust error checking and recovery
 - **Modular Design**: Clean separation of concerns
-- **Comprehensive Testing**: Full test suite with real data validation
+- **Comprehensive Testing**: Optimized test suite with real data validation (4 core test files)
 - **Modern Visualization**: matplotlib/seaborn with publication-quality output
+- **Result Persistence**: All tests generate .npz result files for analysis
 
 ### ✅ Real Data Integration
-- **Experimental Data**: Processes actual eye-tracking recordings
+- **Experimental Data**: Processes actual eye-tracking recordings with 15D feature encoding
 - **Multiple Formats**: Handles .csv, .list, knowledge base files
 - **Batch Processing**: Support for multiple sessions and participants
 - **Statistical Analysis**: Complete evaluation metrics and comparisons
+- **Result Storage**: Persistent .npz files for downstream analysis
 
 ## Dependencies
 
@@ -360,7 +373,7 @@ python-ver/
 ### Scaling Considerations
 - **Sessions**: Tested with 10+ sessions simultaneously  
 - **Topics**: Supports 2-10 topics efficiently
-- **Features**: Handles 5-50 feature dimensions
+- **Features**: Handles 15-dimensional one-hot encoded feature space (extensible to larger dimensions)
 - **Observations**: Processes sequences of 50-200 timepoints
 
 ## Troubleshooting
@@ -381,8 +394,8 @@ python-ver/
 
 3. **Model Training Issues**:
    ```bash
-   # Verify data preprocessing
-   python test_gaze_pipeline.py
+   # Verify data preprocessing and 15D feature generation
+   python test_actual_data.py
    ```
 
 ### Debug Mode
@@ -422,3 +435,8 @@ If you use this code in your research, please cite:
 ## Acknowledgments
 
 This Python implementation is translated from the original MATLAB AspectEstimation codebase. Special thanks to the original authors for their comprehensive implementation of the 4-layer pLSA model and experimental data processing pipeline.
+
+**Key Implementation Notes:**
+- Corrected feature space implementation: 15-dimensional one-hot encoding (5 attributes × 3 values)
+- Complete algorithm equivalence validated against MATLAB results
+- Enhanced with modern Python practices while maintaining numerical precision

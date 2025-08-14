@@ -117,6 +117,32 @@ class GazeDataReader:
         print(f"Created sample knowledge base: {kb.shape}")
         return kb
     
+    def _convert_to_onehot(self, semantic_seq: np.ndarray) -> np.ndarray:
+        """
+        Convert semantic attribute sequence to one-hot encoding
+        
+        Args:
+            semantic_seq: 5×T array where each value is 1, 2, or 3
+            
+        Returns:
+            15×T array with one-hot encoding (5 attributes × 3 values each)
+        """
+        n_attributes, n_timepoints = semantic_seq.shape
+        n_values = 3  # Each attribute can have values 1, 2, 3
+        
+        # Create one-hot encoded array: 15×T (5 attributes × 3 values)
+        onehot = np.zeros((n_attributes * n_values, n_timepoints), dtype=float)
+        
+        for attr in range(n_attributes):
+            for t in range(n_timepoints):
+                value = semantic_seq[attr, t]
+                if 1 <= value <= 3:
+                    # Convert to one-hot index: attribute * 3 + (value - 1)
+                    onehot_idx = attr * n_values + (value - 1)
+                    onehot[onehot_idx, t] = 1.0
+        
+        return onehot
+    
     def load_session_from_files(self, csv_file: str, list_file: str, 
                                user_id: int = 1, task_id: int = 1) -> dict:
         """
@@ -380,8 +406,13 @@ class GazeDataReader:
                         kb_idx = item_list[list_idx] - 1  # Convert to 0-based index into KB
                         if 0 <= kb_idx < self.knowledge_base.shape[0]:
                             semantic_seq[:, t] = self.knowledge_base[kb_idx, :]
+            
+            # Convert to one-hot encoding for feature values
+            # Each attribute can have values 1, 2, 3 -> 15 features total (5 attributes × 3 values)
+            semantic_seq_onehot = self._convert_to_onehot(semantic_seq)
         else:
             semantic_seq = np.zeros((self.knowledge_base.shape[1], 0), dtype=int)
+            semantic_seq_onehot = np.zeros((15, 0), dtype=float)  # 5 attributes × 3 values
         
         # Create semantic_attributes: KB(list, :)
         semantic_attributes = np.zeros((len(item_list), self.knowledge_base.shape[1]), dtype=int)
@@ -410,7 +441,8 @@ class GazeDataReader:
             'task': task,                             # Task number
             'usr': user_id,                           # User ID
             'totalduration': total_duration,          # Total session duration
-            'semantic_attribute_seq': semantic_seq,   # KB(list(f), :)'
+            'semantic_attribute_seq': semantic_seq,   # KB(list(f), :)' - original 5×T
+            'semantic_attribute_seq_onehot': semantic_seq_onehot,  # One-hot encoded 15×T
             'semantic_attributes': semantic_attributes, # KB(list, :)
             'candidate': candidate,                   # Task-specific candidates
             'raw_gaze': gaze_data,                    # Original gaze data
