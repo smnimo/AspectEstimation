@@ -294,51 +294,77 @@ class AspectPlotter:
     def plot_aspect_matrices(self, results_data: Dict[str, Any], 
                            max_topics: int = 5, save_path: str = None) -> plt.Figure:
         """
-        Plot aspect matrices for different topics
-        Translates: aspect visualization from plot_L_topic.m
+        Plot aspect matrices (Topic → Feature distributions) for different topics
+        Shows 15D feature distributions learned by pLSA
         
         Args:
-            results_data: Dictionary containing results data
+            results_data: Dictionary containing pLSA results with 'params' key
             max_topics: Maximum number of topics to plot
             save_path: Path to save figure (optional)
             
         Returns:
             matplotlib Figure object
         """
-        fig, axes = plt.subplots(2, max_topics + 1, figsize=(18, 8))
+        # Extract actual pLSA parameters if available
+        if 'params' in results_data and results_data['params'] is not None:
+            params = results_data['params']
+            if 'vz' in params and params['vz'] is not None:
+                # Use actual P(v|z) parameters - 15D feature distributions
+                n_topics = len(params['vz'])
+                n_features = len(params['vz'][0]) if params['vz'] else 15
+                
+                # Create matrix: features × topics for visualization
+                aspect_matrix = np.zeros((n_features, n_topics))
+                for k, vz_k in enumerate(params['vz']):
+                    aspect_matrix[:, k] = vz_k
+                
+                print(f"Using actual pLSA parameters: {n_features}D features × {n_topics} topics")
+            else:
+                # Fallback to mock 15D data
+                print("Warning: No 'vz' parameters found, using mock 15D data")
+                n_features = 15
+                n_topics = max_topics
+                np.random.seed(42)
+                aspect_matrix = np.random.rand(n_features, n_topics)
+        else:
+            # Fallback to mock 15D data
+            print("Warning: No pLSA parameters found, using mock 15D data")
+            n_features = 15
+            n_topics = max_topics
+            np.random.seed(42)
+            aspect_matrix = np.random.rand(n_features, n_topics)
         
-        # Plot aspect matrices for each topic
-        for topic in range(1, max_topics + 1):
-            # Mock aspect data (replace with actual data loading)
-            np.random.seed(42 + topic)
-            asp_all = np.random.rand(12, 5)  # 12 items × 5 attributes
-            asp_spe = np.random.rand(12, 5)
+        # Create visualization
+        fig, ax = plt.subplots(1, 1, figsize=(12, 8))
+        
+        # Plot aspect matrix with proper labels
+        im = ax.imshow(aspect_matrix, cmap='Blues', aspect='auto', origin='lower')
+        
+        # Add colorbar
+        cbar = plt.colorbar(im, ax=ax)
+        cbar.set_label('P(v|z) - Feature Probability', rotation=270, labelpad=20)
+        
+        # Set labels
+        ax.set_title(f'Aspect Matrices: Topic → Feature Distributions\n'
+                    f'{n_features}D Features × {n_topics} Topics', fontsize=14)
+        ax.set_xlabel('Topics', fontsize=12)
+        ax.set_ylabel('Feature Dimensions (15D One-hot)', fontsize=12)
+        
+        # Set ticks
+        ax.set_xticks(range(n_topics))
+        ax.set_xticklabels([f'Topic {i+1}' for i in range(n_topics)])
+        
+        # For 15D features, add attribute group labels
+        if n_features == 15:
+            ax.set_yticks([2, 5, 8, 11, 14])  # Middle of each 3-value group
+            ax.set_yticklabels(['Attr 1\n(1-3)', 'Attr 2\n(4-6)', 'Attr 3\n(7-9)', 
+                               'Attr 4\n(10-12)', 'Attr 5\n(13-15)'])
             
-            # Plot all data aspects
-            im1 = axes[0, topic-1].imshow(asp_all, cmap='gray', aspect='auto')
-            axes[0, topic-1].set_title(f'All Data - Topic {topic}')
-            axes[0, topic-1].set_ylabel('Items')
-            axes[0, topic-1].set_xlabel('Attributes')
-            
-            # Plot MSET aspects
-            im2 = axes[1, topic-1].imshow(asp_spe, cmap='gray', aspect='auto')
-            axes[1, topic-1].set_title(f'MSET - Topic {topic}')
-            axes[1, topic-1].set_ylabel('Items')
-            axes[1, topic-1].set_xlabel('Attributes')
-        
-        # Plot ground truth (giventask)
-        np.random.seed(42)
-        giventask = np.random.rand(5, 12)  # Mock ground truth
-        
-        im3 = axes[0, max_topics].imshow(giventask.T, cmap='gray', aspect='auto')
-        axes[0, max_topics].set_title('Ground Truth')
-        axes[0, max_topics].set_ylabel('Items')
-        axes[0, max_topics].set_xlabel('Attributes')
-        
-        im4 = axes[1, max_topics].imshow(giventask.T, cmap='gray', aspect='auto')
-        axes[1, max_topics].set_title('Ground Truth')
-        axes[1, max_topics].set_ylabel('Items')
-        axes[1, max_topics].set_xlabel('Attributes')
+            # Add horizontal lines to separate attribute groups
+            for i in [2.5, 5.5, 8.5, 11.5]:
+                ax.axhline(y=i, color='white', linewidth=1, alpha=0.7)
+        else:
+            ax.set_yticks(range(0, n_features, max(1, n_features // 10)))
         
         plt.tight_layout()
         
@@ -605,9 +631,15 @@ class AspectPlotter:
         fig, ax = plt.subplots(1, 1, figsize=(10, 8))
         
         try:
+            # Check for empty or invalid matrix
+            if aspect_matrix is None or aspect_matrix.size == 0:
+                raise ValueError("Empty or None aspect matrix provided")
+            
             # Ensure matrix is 2D
             if aspect_matrix.ndim == 1:
-                aspect_matrix = aspect_matrix.reshape(1, -1)
+                aspect_matrix = aspect_matrix.reshape(-1, 1)
+            
+            print(f"Processing aspect matrix: {aspect_matrix.shape} (features × topics)")
             
             # Take the second half of columns if specified (like R script)
             n_cols = aspect_matrix.shape[1]
@@ -616,6 +648,12 @@ class AspectPlotter:
                 matrix_subset = aspect_matrix[:, start_col:]
             else:
                 matrix_subset = aspect_matrix
+            
+            print(f"Using matrix subset: {matrix_subset.shape}")
+            
+            # Check if subset is empty
+            if matrix_subset.size == 0:
+                raise ValueError("Matrix subset is empty after column selection")
             
             # Normalize matrix to probability range [0, 1] if needed
             if matrix_subset.min() < 0 or matrix_subset.max() > 1:
@@ -795,17 +833,40 @@ class AspectPlotter:
         
         # Aspect correlation circles (plot_aspect.R equivalent)
         try:
-            if 'params' in data and len(data['params']) > 0:
-                params = data['params'][0]
-                if 'vz' in params:
-                    # Use the first topic's feature distribution
-                    aspect_matrix = np.array(params['vz'][0])
-                    fig8 = self.plot_aspect_correlation_circles(aspect_matrix)
+            if 'params' in data and data['params'] is not None:
+                params = data['params']
+                if 'vz' in params and params['vz'] is not None:
+                    # Create aspect matrix from P(v|z) parameters
+                    # Convert list of topic distributions to features × topics matrix
+                    n_topics = len(params['vz'])
+                    n_features = len(params['vz'][0]) if params['vz'] else 15
+                    
+                    aspect_matrix = np.zeros((n_features, n_topics))
+                    for k, vz_k in enumerate(params['vz']):
+                        aspect_matrix[:, k] = vz_k
+                    
+                    # Generate feature names for 15D one-hot features
+                    feature_names = []
+                    if n_features == 15:  # 15D one-hot case
+                        for attr in range(5):
+                            for value in range(1, 4):  # Values 1, 2, 3
+                                feature_names.append(f'Attr{attr+1}_Val{value}')
+                    else:
+                        feature_names = [f'Feature_{i+1}' for i in range(n_features)]
+                    
+                    fig8 = self.plot_aspect_correlation_circles(
+                        aspect_matrix=aspect_matrix,
+                        feature_names=feature_names
+                    )
                     path8 = os.path.join(output_dir, "aspect_correlations.png")
                     fig8.savefig(path8, dpi=300, bbox_inches='tight')
                     saved_paths.append(path8)
                     plt.close(fig8)
                     print("✅ Created aspect correlation circles")
+                else:
+                    print("⚠️ No 'vz' parameters found for aspect correlations")
+            else:
+                print("⚠️ No pLSA parameters found for aspect correlations")
         except Exception as e:
             print(f"❌ Error creating aspect correlation circles: {e}")
         

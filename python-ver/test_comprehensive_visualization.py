@@ -33,6 +33,7 @@ class ComprehensiveVisualizationTest:
         self.session = None
         self.results_dir = "results"
         self.figures_dir = "figures"
+        self.last_plsa_params = None  # Store latest pLSA parameters for visualization
         
         # Ensure directories exist
         os.makedirs(self.results_dir, exist_ok=True)
@@ -140,13 +141,36 @@ class ComprehensiveVisualizationTest:
             print(f"      ❌ Likelihood comparison failed: {e}")
             results.append(False)
         
-        # Test 4: Aspect matrices
+        # Test 4: Aspect matrices with actual pLSA parameters
         try:
             print("   🔲 Aspect matrices...")
-            fig = self.plotter.plot_aspect_matrices(sessions_data, max_topics=3)
+            # Use pLSA integration data if available
+            mock_data_with_params = sessions_data.copy()
+            
+            # If we have real pLSA results, use them
+            if hasattr(self, 'last_plsa_params') and self.last_plsa_params is not None:
+                mock_data_with_params['params'] = self.last_plsa_params
+                print("      📊 Using actual pLSA parameters for aspect matrices")
+            else:
+                # Create mock 15D pLSA parameters
+                mock_params = {
+                    'vz': [
+                        np.random.rand(15) / 15,  # Topic 1: 15D feature distribution
+                        np.random.rand(15) / 15,  # Topic 2: 15D feature distribution  
+                        np.random.rand(15) / 15   # Topic 3: 15D feature distribution
+                    ]
+                }
+                # Normalize each topic's feature distribution
+                for i, vz in enumerate(mock_params['vz']):
+                    mock_params['vz'][i] = vz / np.sum(vz)
+                
+                mock_data_with_params['params'] = mock_params
+                print("      📊 Using mock 15D pLSA parameters for aspect matrices")
+            
+            fig = self.plotter.plot_aspect_matrices(mock_data_with_params, max_topics=3)
             fig.savefig(f"{self.figures_dir}/aspect_matrices_test.png", dpi=150, bbox_inches='tight')
             plt.close(fig)
-            print("      ✅ Aspect matrices completed")
+            print("      ✅ Aspect matrices completed (15D features)")
             results.append(True)
         except Exception as e:
             print(f"      ❌ Aspect matrices failed: {e}")
@@ -292,12 +316,16 @@ class ComprehensiveVisualizationTest:
                 
                 params, history = model.fit(sessions, train_lim=1e-4, max_itr=5)
                 
+                # Store latest params for aspect matrices visualization
+                self.last_plsa_params = params
+                
                 likelihood_results[n_topics] = {
                     'likelihood': history[-1],
                     'params': params,
                     'history': history
                 }
                 print(f"      Final likelihood: {history[-1]:.4f}")
+                print(f"      Saved P(v|z) parameters: {len(params['vz'])} topics × {len(params['vz'][0])}D features")
             
             # Save results for visualization
             for n_topics, results in likelihood_results.items():
@@ -319,7 +347,7 @@ class ComprehensiveVisualizationTest:
         
         try:
             # Create comprehensive data structure with 15D features
-            # Create mock 15D one-hot session data
+            # Create mock data for comprehensive report
             mock_session_15d = np.zeros((15, 30))
             for t in range(30):
                 for attr in range(5):
@@ -330,7 +358,6 @@ class ComprehensiveVisualizationTest:
             mock_data = {
                 'sessions': [{'semantic_attribute_seq_onehot': mock_session_15d}],
                 'models': [None],  # Placeholder
-                'params': [{'vz': [np.random.rand(15, 3)]}],  # 15D features × 3 topics
                 'history': [[100, 90, 85, 82, 80]],  # Mock likelihood history
                 'gaze_trajectories': {
                     'session_id': 'comprehensive_test',
@@ -343,6 +370,26 @@ class ComprehensiveVisualizationTest:
                     (2, 1): {'usr': 2, 'task': 1, 'totalduration': 67.3},
                 }
             }
+            
+            # Use actual pLSA parameters if available, otherwise use mock
+            if hasattr(self, 'last_plsa_params') and self.last_plsa_params is not None:
+                mock_data['params'] = self.last_plsa_params
+                print("   📊 Using actual pLSA parameters for comprehensive report")
+            else:
+                # Create mock 15D pLSA parameters
+                mock_params = {
+                    'vz': [
+                        np.random.rand(15) / 15,  # Topic 1: 15D feature distribution
+                        np.random.rand(15) / 15,  # Topic 2: 15D feature distribution  
+                        np.random.rand(15) / 15   # Topic 3: 15D feature distribution
+                    ]
+                }
+                # Normalize each topic's feature distribution
+                for i, vz in enumerate(mock_params['vz']):
+                    mock_params['vz'][i] = vz / np.sum(vz)
+                
+                mock_data['params'] = mock_params
+                print("   📊 Using mock 15D parameters for comprehensive report")
             
             saved_paths = self.plotter.create_comprehensive_report(mock_data)
             
@@ -373,14 +420,14 @@ class ComprehensiveVisualizationTest:
         # 1. Data loading
         test_results.extend([self.test_data_loading()])
         
-        # 2. Original 6 plot functions
+        # 2. pLSA integration (run early to get parameters for aspect matrices)
+        test_results.extend(self.test_plsa_integration())
+        
+        # 3. Original 6 plot functions (now using real pLSA parameters if available)
         test_results.extend(self.test_original_plot_functions())
         
-        # 3. Additional 2 plot functions  
+        # 4. Additional 2 plot functions  
         test_results.extend(self.test_additional_plot_functions())
-        
-        # 4. pLSA integration
-        test_results.extend(self.test_plsa_integration())
         
         # 5. Comprehensive report
         test_results.extend(self.test_comprehensive_report())
