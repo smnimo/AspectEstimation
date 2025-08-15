@@ -54,6 +54,7 @@ Session(s) → Topic(z) → Feature(v) → Observation(o)
 ### 3. Visualization (`src/visualization/`)
 - **Complete plot_*.m Translation**: All MATLAB plotting functions converted
 - **Likelihood Analysis**: Model comparison across topic numbers (plot_L_topic.m)
+- **Likelihood Convergence**: pLSA training progress visualization with EM iteration tracking
 - **Confusion Matrices**: Task classification performance (plot_conf_matrix.m)
 - **Duration Analysis**: User behavior patterns with boxplots (plot_dur_usr.m)
 - **Aspect Matrices**: Feature-topic relationship visualization
@@ -61,7 +62,7 @@ Session(s) → Topic(z) → Feature(v) → Observation(o)
 - **Evaluation Metrics**: Precision, recall, F1-score visualization (plot_eval_AoF.m)
 - **Gaze Trajectories**: Original eye movement path visualization (plot_org_gaze.m)
 - **Aspect Correlations**: Circular correlation matrix plots (plot_aspect.R)
-- **Comprehensive Reports**: Automated multi-plot generation
+- **Comprehensive Reports**: Automated multi-plot generation with convergence tracking
 
 ### 4. Utilities (`src/utils/`)
 - **Mathematical Functions**: Normalization, probability calculations
@@ -111,10 +112,9 @@ params, history = model.fit([session['semantic_attribute_seq_onehot']])  # 15D o
 # 3. Generate visualizations
 plotter = AspectPlotter()
 plotter.create_comprehensive_report({
-    'sessions': [session],
-    'models': [model],
-    'params': [params],
-    'history': [history]
+    'session': {(1, 1): session},
+    'params': params,
+    'likelihood_histories': {3: history}  # NEW: Include training convergence data
 })
 ```
 
@@ -180,7 +180,8 @@ The visualization system provides full translation of all MATLAB plotting functi
 
 #### 1. Likelihood Analysis (`plot_L_topic.m`)
 - Compare model performance across different topic numbers
-- Training convergence monitoring
+- **Training convergence monitoring with EM iteration tracking**
+- **Individual and multi-model convergence visualization**
 - Model selection support
 
 #### 2. Confusion Matrices (`plot_conf_matrix.m`)  
@@ -228,6 +229,8 @@ plotter = AspectPlotter()
 
 # Individual plot types
 plotter.plot_likelihood_comparison(models, histories)
+plotter.plot_likelihood_convergence(likelihood_history, topic_num=3)  # NEW: EM convergence
+plotter.plot_multiple_likelihood_convergence(likelihood_histories)     # NEW: Multi-model comparison
 plotter.plot_confusion_matrix(true_labels, predicted_labels)
 plotter.plot_duration_by_user(session_data)
 plotter.plot_aspect_matrices(params['vz'])  # 15×topics matrices
@@ -238,11 +241,75 @@ plotter.plot_evaluation_metrics(metrics_data)
 plotter.plot_original_gaze_trajectories(gaze_data)
 plotter.plot_aspect_correlation_circles(aspect_matrix)  # 15D correlation circles
 
-# Comprehensive report generation (all 8 plot types)
-plotter.create_comprehensive_report(experimental_data)
+# Comprehensive report generation (10+ plot types including convergence tracking)
+data_with_histories = {
+    'session': session_data,
+    'params': model_params,
+    'likelihood_histories': {2: history_2topics, 3: history_3topics}  # NEW: Convergence data
+}
+plotter.create_comprehensive_report(data_with_histories)
 ```
 
 ## Testing
+
+### Test Suite Overview
+
+#### 🧪 Comprehensive Testing Suite
+```bash
+# Full system test with realistic data flow and convergence tracking
+python test_comprehensive_visualization.py
+```
+**Purpose**: Complete end-to-end testing with realistic data flow
+- **Data Flow**: KB → Item Sequences → Semantic Attributes → One-hot (realistic)
+- **Scale**: 200 samples × 20 sessions (comprehensive)
+- **Features**: All 10+ visualization functions including convergence tracking
+- **pLSA**: Actual model training with realistic data (not mock)
+- **Integration**: Complete realistic data pipeline testing
+- **Use Case**: Production validation, release testing
+
+#### ⚡ Quick Development Testing
+```bash
+# Lightweight test for likelihood convergence plotting only
+python test_likelihood_convergence.py
+```
+**Purpose**: Quick validation during development
+- **Data**: 50 samples × 3 sessions (lightweight)  
+- **Features**: Likelihood convergence plotting only
+- **pLSA**: Fast model training for feature validation
+- **Integration**: Single feature testing
+- **Use Case**: Feature development, debugging
+
+#### 📋 Additional Test Files
+```bash
+# Test with real experimental data files
+python test_with_arguments.py \
+  --knowledge sample_data/knowledge.csv \
+  --gaze sample_data/170116024150092.csv \
+  --layout sample_data/170116024150092.list
+
+# Core 4-layer pLSA functionality
+python test_four_layer.py
+
+# Real data processing pipeline
+python test_actual_data.py
+```
+
+### Test File Roles
+
+| Test File | Purpose | Data Scale | Speed | Use Case |
+|-----------|---------|------------|-------|----------|
+| `test_comprehensive_visualization.py` | **Complete system test with realistic data flow** | 200×20 sessions | Slow | Production validation |
+| `test_likelihood_convergence.py` | **Quick feature test** | 50×3 sessions | Fast | Development validation |
+| `test_with_arguments.py` | Real data testing | Variable | Medium | Data validation |
+| `test_four_layer.py` | Core algorithm test | Small | Fast | Algorithm validation |
+| `test_actual_data.py` | Data pipeline test | Variable | Medium | Pipeline validation |
+
+### Recommended Testing Workflow
+
+1. **During Development**: Use `test_likelihood_convergence.py` for quick validation
+2. **Before Commits**: Run `test_comprehensive_visualization.py` for full validation  
+3. **Real Data Testing**: Use `test_with_arguments.py` with actual data files
+4. **Algorithm Changes**: Test with `test_four_layer.py` first
 
 ### Available Test Suite
 
@@ -253,7 +320,7 @@ python test_four_layer.py           # 4-layer pLSA training validation (15D feat
 python test_with_arguments.py       # Command-line interface testing
 
 # Comprehensive visualization system  
-python test_comprehensive_visualization.py  # All 8 plotting functions including additional plots
+python test_comprehensive_visualization.py  # Realistic data flow + all 10+ plotting functions including convergence
 
 # Legacy individual tests (kept for compatibility)
 python -m src.data.gaze_reader      # Data reader demonstration
@@ -263,16 +330,25 @@ python -m src.models.plsa           # Model training demonstration
 ### Sample Test Output
 
 ```
-Testing 4-layer pLSA with real data (15D features):
+🚀 Starting Comprehensive Visualization Test Suite...
+   📚 Using realistic data flow: KB → Items → Attributes → One-hot
+   📈 Including pLSA likelihood convergence plotting
+
+Testing realistic data generation with shared KB:
 ✅ Loaded knowledge base: (12, 5)
-✅ Session loaded: 56 timepoints
-✅ Generated 15D one-hot features: (56, 15)
-✅ Training model with 3 topics...
-✅ Training completed: 3 iterations
-✅ Final likelihood: -315.4202
-✅ Generated visualizations: 8 plots
-✅ Saved results: results/test_real_data_topic3.npz
-✅ Comprehensive report saved
+✅ Generated 20 sessions with realistic item sequences
+✅ Created semantic attributes from KB lookup
+✅ Generated 15D one-hot features: (20, 15, 200)
+
+Training pLSA models with realistic data:
+✅ Training 2-topic model: Final likelihood -47573.57 (8 iterations)
+✅ Training 3-topic model: Final likelihood -44383.41 (8 iterations)
+✅ Created likelihood convergence plots
+
+Testing all visualization functions:
+✅ Generated visualizations: 11 plots including convergence tracking
+✅ All tests passed: Success Rate 100.0%
+✅ Saved results: results/ and figures/
 ```
 
 ## Project Structure
@@ -312,13 +388,15 @@ python-ver/
 - **15D Feature Space**: Corrected one-hot encoding implementation (5 attributes × 3 values)
 - **Data Processing**: LoadGaze.m and ReadwithTimestamp.m fully translated with proper feature encoding
 - **Model Architecture**: Correct 4-layer Session→Topic→Feature→Observation with 15D feature support
-- **Visualization**: All plot_*.m functions converted with enhanced styling including gaze trajectories and correlation circles (15D aware)
+- **Visualization**: All plot_*.m functions converted with enhanced styling including gaze trajectories, correlation circles, and **training convergence tracking** (10+ plots total)
 
 ### ✅ Enhanced Functionality  
+- **Realistic Data Flow**: KB → Item Sequences → Semantic Attributes → One-hot (production-ready)
+- **Training Visualization**: Complete pLSA convergence monitoring with EM iteration tracking
 - **Type Safety**: Full type hints and validation
 - **Error Handling**: Robust error checking and recovery
 - **Modular Design**: Clean separation of concerns
-- **Comprehensive Testing**: Optimized test suite with real data validation (4 core test files)
+- **Comprehensive Testing**: Optimized test suite with realistic data flow validation
 - **Modern Visualization**: matplotlib/seaborn with publication-quality output
 - **Result Persistence**: All tests generate .npz result files for analysis
 

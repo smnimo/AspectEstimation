@@ -21,10 +21,13 @@ class AspectPlotter:
     
     Handles:
     1. Likelihood plotting (plot_L_topic.m)
-    2. Confusion matrix visualization (plot_conf_matrix.m)
-    3. Duration analysis (plot_dur_usr.m)
-    4. Evaluation metrics (plot_eval_AoF.m)
-    5. Similarity analysis (plot_sim.m, plot_sim_task_asp.m)
+    2. Likelihood convergence plotting (pLSA training history)
+    3. Confusion matrix visualization (plot_conf_matrix.m)
+    4. Duration analysis (plot_dur_usr.m)
+    5. Evaluation metrics (plot_eval_AoF.m)
+    6. Similarity analysis (plot_sim.m, plot_sim_task_asp.m)
+    7. Gaze trajectory plotting (plot_org_gaze.m)
+    8. Aspect correlation circles (plot_aspect.R)
     """
     
     def __init__(self, results_dir: str = "results", figure_dir: str = "figures"):
@@ -903,6 +906,40 @@ class AspectPlotter:
         
         saved_paths = []
         
+        # Likelihood convergence plots (learning history)
+        try:
+            if 'likelihood_histories' in data:
+                likelihood_histories = data['likelihood_histories']
+                
+                # Individual convergence plots
+                for n_topics, history in likelihood_histories.items():
+                    if history:
+                        fig_conv = self.plot_likelihood_convergence(
+                            likelihood_history=history,
+                            topic_num=n_topics
+                        )
+                        path_conv = os.path.join(output_dir, f"likelihood_convergence_{n_topics}topics.png")
+                        fig_conv.savefig(path_conv, dpi=300, bbox_inches='tight')
+                        saved_paths.append(path_conv)
+                        plt.close(fig_conv)
+                        print(f"✅ Created likelihood convergence plot for {n_topics} topics")
+                
+                # Comparison convergence plot
+                if len(likelihood_histories) > 1:
+                    fig_comp = self.plot_multiple_likelihood_convergence(
+                        likelihood_histories=likelihood_histories,
+                        title="pLSA Likelihood Convergence Comparison"
+                    )
+                    path_comp = os.path.join(output_dir, "likelihood_convergence_comparison.png")
+                    fig_comp.savefig(path_comp, dpi=300, bbox_inches='tight')
+                    saved_paths.append(path_comp)
+                    plt.close(fig_comp)
+                    print("✅ Created likelihood convergence comparison plot")
+            else:
+                print("⚠️ No likelihood histories found - skipping convergence plots")
+        except Exception as e:
+            print(f"❌ Error creating likelihood convergence plots: {e}")
+        
         # Likelihood comparison
         try:
             fig1 = self.plot_likelihood_comparison()
@@ -1023,7 +1060,7 @@ class AspectPlotter:
             print(f"❌ Error creating aspect correlation circles: {e}")
         
         print(f"\n🎨 Comprehensive report completed!")
-        print(f"   Created {len(saved_paths)} out of 8 plots")
+        print(f"   Created {len(saved_paths)} out of 10+ plots (includes individual convergence plots)")
         print(f"   Saved to: {output_dir}")
         
         return saved_paths
