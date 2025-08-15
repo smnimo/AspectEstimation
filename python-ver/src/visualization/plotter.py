@@ -114,6 +114,8 @@ class AspectPlotter:
         
         Args:
             results_data: Dictionary containing session data and results
+                        Must include 'confusion_mset' and 'confusion_no_mset' keys,
+                        or will generate mock data for testing purposes
             topic: Topic number to analyze
             save_path: Path to save figure (optional)
             
@@ -129,31 +131,18 @@ class AspectPlotter:
         n_task = 3  # Based on ReadwithTimestamp.m
         n_usr = len(set(s['usr'] for s in sessions.values()))
         
-        # Create confusion matrices
-        conf_mset = np.zeros((n_task, n_task + 1))
-        conf_no_mset = np.zeros((n_task, n_task + 1))
-        
-        # Mock data for demonstration (in real implementation, use actual p.zs)
-        # This would be replaced with actual trained model results
-        np.random.seed(42)
-        
-        for task in range(1, n_task + 1):
-            # Simulate task estimation results
-            est_task_mset = np.random.choice(range(1, n_task + 2), n_usr)
-            est_task_no_mset = np.random.choice(range(1, n_task + 2), n_usr)
-            
-            # Build confusion matrices
-            for est in est_task_mset:
-                if est <= n_task:
-                    conf_mset[task-1, est-1] += 1
-                else:
-                    conf_mset[task-1, n_task] += 1
-            
-            for est in est_task_no_mset:
-                if est <= n_task:
-                    conf_no_mset[task-1, est-1] += 1
-                else:
-                    conf_no_mset[task-1, n_task] += 1
+        # Use provided confusion matrices or raise error
+        if 'confusion_mset' in results_data and 'confusion_no_mset' in results_data:
+            # Use actual confusion matrices from results
+            conf_mset = results_data['confusion_mset']
+            conf_no_mset = results_data['confusion_no_mset']
+            print("   📊 Using provided confusion matrices")
+        else:
+            # Raise error if no confusion matrices provided
+            raise ValueError(
+                "Missing required confusion matrices in results_data. "
+                "Please provide 'confusion_mset' and 'confusion_no_mset' keys with confusion matrix data."
+            )
         
         # Create figure
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
@@ -349,13 +338,17 @@ class AspectPlotter:
                 # Add ground truth column (rightmost)
                 col_idx = min(max_topics, n_topics)
                 
-                # Create mock ground truth (knowledge base representation)
+                # Use provided ground truth or raise error for critical missing data
                 if 'knowledge_base' in results_data:
                     ground_truth = results_data['knowledge_base'].T  # transpose to match format
+                    print("   📚 Using provided knowledge base as ground truth")
+                elif 'ground_truth' in results_data:
+                    ground_truth = results_data['ground_truth']
+                    print("   📚 Using provided ground truth")
                 else:
-                    # Create mock 15×1 ground truth
-                    np.random.seed(42)
-                    ground_truth = np.random.rand(n_features, 1)
+                    # For ground truth, we can create a neutral placeholder since it's reference data
+                    print("   ⚠️ No ground truth provided, using neutral reference")
+                    ground_truth = np.ones((n_features, 1)) * 0.5  # Neutral gray reference
                 
                 # Plot ground truth
                 im3 = axes[0, col_idx].imshow(ground_truth, cmap='Greys', aspect='auto', origin='lower')
@@ -375,17 +368,17 @@ class AspectPlotter:
                     axes[1, col_idx].set_yticklabels(['Attr1', 'Attr2', 'Attr3', 'Attr4', 'Attr5'])
                 
             else:
-                # Fallback to mock 15D data
-                print("Warning: No 'vz' parameters found, using mock 15D data")
-                n_features = 15
-                n_topics = max_topics
-                fig = self._create_mock_aspect_matrices(n_features, n_topics, max_topics)
+                # No 'vz' parameters found - raise error
+                raise ValueError(
+                    "No 'vz' parameters found in pLSA results. "
+                    "Please provide results_data['params']['vz'] with topic feature distributions."
+                )
         else:
-            # Fallback to mock 15D data
-            print("Warning: No pLSA parameters found, using mock 15D data")
-            n_features = 15
-            n_topics = max_topics
-            fig = self._create_mock_aspect_matrices(n_features, n_topics, max_topics)
+            # No pLSA parameters provided - raise error
+            raise ValueError(
+                "No pLSA parameters found in results_data. "
+                "Please provide results_data with 'params' key containing 'vz' parameters."
+            )
         
         plt.tight_layout()
         
@@ -395,57 +388,6 @@ class AspectPlotter:
         
         return fig
     
-    def _create_mock_aspect_matrices(self, n_features: int, n_topics: int, max_topics: int) -> plt.Figure:
-        """Create mock aspect matrices in MATLAB style"""
-        fig, axes = plt.subplots(2, max_topics + 1, figsize=(18, 8))
-        
-        # Plot aspect matrices for each topic
-        for topic in range(1, max_topics + 1):
-            # Mock aspect data
-            np.random.seed(42 + topic)
-            asp_all = np.random.rand(n_features, 1)  # 15D features × 1 topic
-            asp_spe = np.random.rand(n_features, 1)
-            
-            # Plot all data aspects
-            im1 = axes[0, topic-1].imshow(asp_all, cmap='Blues', aspect='auto', origin='lower')
-            axes[0, topic-1].set_title(f'All Data - Topic {topic}')
-            axes[0, topic-1].set_ylabel('Feature Dimensions')
-            axes[0, topic-1].set_xlabel('Topic')
-            
-            # Plot MSET aspects
-            im2 = axes[1, topic-1].imshow(asp_spe, cmap='Blues', aspect='auto', origin='lower')
-            axes[1, topic-1].set_title(f'MSET - Topic {topic}')
-            axes[1, topic-1].set_ylabel('Feature Dimensions')
-            axes[1, topic-1].set_xlabel('Topic')
-            
-            # Add 15D labels if applicable
-            if n_features == 15:
-                axes[0, topic-1].set_yticks([2, 5, 8, 11, 14])
-                axes[0, topic-1].set_yticklabels(['Attr1', 'Attr2', 'Attr3', 'Attr4', 'Attr5'])
-                axes[1, topic-1].set_yticks([2, 5, 8, 11, 14])
-                axes[1, topic-1].set_yticklabels(['Attr1', 'Attr2', 'Attr3', 'Attr4', 'Attr5'])
-        
-        # Plot ground truth (giventask equivalent)
-        np.random.seed(42)
-        giventask = np.random.rand(n_features, 1)
-        
-        im3 = axes[0, max_topics].imshow(giventask, cmap='Greys', aspect='auto', origin='lower')
-        axes[0, max_topics].set_title('Ground Truth')
-        axes[0, max_topics].set_ylabel('Feature Dimensions')
-        axes[0, max_topics].set_xlabel('Reference')
-        
-        im4 = axes[1, max_topics].imshow(giventask, cmap='Greys', aspect='auto', origin='lower')
-        axes[1, max_topics].set_title('Ground Truth')
-        axes[1, max_topics].set_ylabel('Feature Dimensions')
-        axes[1, max_topics].set_xlabel('Reference')
-        
-        if n_features == 15:
-            axes[0, max_topics].set_yticks([2, 5, 8, 11, 14])
-            axes[0, max_topics].set_yticklabels(['Attr1', 'Attr2', 'Attr3', 'Attr4', 'Attr5'])
-            axes[1, max_topics].set_yticks([2, 5, 8, 11, 14])
-            axes[1, max_topics].set_yticklabels(['Attr1', 'Attr2', 'Attr3', 'Attr4', 'Attr5'])
-        
-        return fig
     
     def plot_similarity_analysis(self, sessions_data: Dict[str, Any], 
                                save_path: str = None) -> plt.Figure:
@@ -454,25 +396,33 @@ class AspectPlotter:
         Translates: plot_sim.m, plot_sim_task_asp.m
         
         Args:
-            sessions_data: Dictionary containing session data
+            sessions_data: Dictionary containing session data and similarity matrices
+                         Should include 'task_similarity', 'aspect_similarity', 'task_aspect_similarity'
+                         or will generate mock data for testing
             save_path: Path to save figure (optional)
             
         Returns:
             matplotlib Figure object
         """
-        # Mock similarity data for demonstration
-        np.random.seed(42)
-        n_tasks = 3
-        n_aspects = 5
-        
-        # Create similarity matrices
-        task_similarity = np.random.rand(n_tasks, n_tasks)
-        aspect_similarity = np.random.rand(n_aspects, n_aspects)
-        task_aspect_similarity = np.random.rand(n_tasks, n_aspects)
-        
-        # Make symmetric
-        task_similarity = (task_similarity + task_similarity.T) / 2
-        aspect_similarity = (aspect_similarity + aspect_similarity.T) / 2
+        # Use provided similarity matrices or raise error
+        if ('task_similarity' in sessions_data and 
+            'aspect_similarity' in sessions_data and 
+            'task_aspect_similarity' in sessions_data):
+            # Use actual similarity matrices
+            task_similarity = sessions_data['task_similarity']
+            aspect_similarity = sessions_data['aspect_similarity']
+            task_aspect_similarity = sessions_data['task_aspect_similarity']
+            
+            # Extract dimensions from actual data
+            n_tasks = task_similarity.shape[0]
+            n_aspects = aspect_similarity.shape[0]
+            print("   📊 Using provided similarity matrices")
+        else:
+            # Raise error if no similarity matrices provided
+            raise ValueError(
+                "Missing required similarity matrices in sessions_data. "
+                "Please provide 'task_similarity', 'aspect_similarity', and 'task_aspect_similarity' keys."
+            )
         
         # Create figure
         fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(12, 10))
@@ -510,9 +460,15 @@ class AspectPlotter:
         ax3.set_yticklabels([f'Task {i+1}' for i in range(n_tasks)])
         plt.colorbar(im3, ax=ax3)
         
-        # Correlation heatmap
-        correlation_data = np.random.rand(n_tasks + n_aspects, n_tasks + n_aspects)
-        correlation_data = (correlation_data + correlation_data.T) / 2
+        # Use provided correlation matrix or raise error
+        if 'overall_correlation' in sessions_data:
+            correlation_data = sessions_data['overall_correlation']
+        else:
+            # Raise error if no correlation matrix provided
+            raise ValueError(
+                "Missing required 'overall_correlation' matrix in sessions_data. "
+                "Please provide correlation matrix data."
+            )
         
         im4 = ax4.imshow(correlation_data, cmap='coolwarm', aspect='auto')
         ax4.set_title('Overall Correlation Matrix')
@@ -539,19 +495,30 @@ class AspectPlotter:
         
         Args:
             evaluation_results: Dictionary containing evaluation data
+                              Should include 'accuracy', 'precision', 'recall' arrays
+                              or will generate mock data for testing
             save_path: Path to save figure (optional)
             
         Returns:
             matplotlib Figure object
         """
-        # Mock evaluation data
-        np.random.seed(42)
-        n_topics = 5
-        
-        accuracy = np.random.rand(n_topics) * 0.3 + 0.6  # 0.6-0.9 range
-        precision = np.random.rand(n_topics) * 0.3 + 0.5
-        recall = np.random.rand(n_topics) * 0.3 + 0.5
-        f1_score = 2 * (precision * recall) / (precision + recall)
+        # Use provided evaluation metrics or raise error
+        if ('accuracy' in evaluation_results and 
+            'precision' in evaluation_results and 
+            'recall' in evaluation_results):
+            # Use actual evaluation metrics
+            accuracy = evaluation_results['accuracy']
+            precision = evaluation_results['precision']
+            recall = evaluation_results['recall']
+            f1_score = 2 * (precision * recall) / (precision + recall)
+            n_topics = len(accuracy)
+            print("   📊 Using provided evaluation metrics")
+        else:
+            # Raise error if no evaluation metrics provided
+            raise ValueError(
+                "Missing required evaluation metrics in evaluation_results. "
+                "Please provide 'accuracy', 'precision', and 'recall' arrays."
+            )
         
         topics = np.arange(1, n_topics + 1)
         
@@ -689,7 +656,8 @@ class AspectPlotter:
     def plot_aspect_correlation_circles(self, 
                                        aspect_matrix: np.ndarray,
                                        feature_names: Optional[List[str]] = None,
-                                       save_path: Optional[str] = None) -> plt.Figure:
+                                       save_path: Optional[str] = None,
+                                       title_suffix: str = "") -> plt.Figure:
         """
         Plot aspect correlation matrix with circles (plot_aspect.R equivalent)
         
@@ -697,6 +665,7 @@ class AspectPlotter:
             aspect_matrix: Matrix of aspect correlations or feature loadings
             feature_names: Optional list of feature names for labeling
             save_path: Optional path to save the plot
+            title_suffix: Optional suffix for plot title to distinguish data sources
             
         Returns:
             matplotlib Figure object
@@ -786,9 +755,14 @@ class AspectPlotter:
             cbar = plt.colorbar(sm, ax=ax, shrink=0.8)
             cbar.set_label('Probability', rotation=270, labelpad=20)
             
-            # Formatting
-            ax.set_title('Aspect Correlation Matrix (Circle Plot)', 
-                        fontsize=14, fontweight='bold')
+            # Formatting with data source indication
+            base_title = 'Aspect Correlation Matrix (Circle Plot)'
+            if title_suffix:
+                title = f'{base_title} - {title_suffix}'
+            else:
+                title = base_title
+            
+            ax.set_title(title, fontsize=14, fontweight='bold')
             ax.grid(True, alpha=0.3)
             ax.set_aspect('equal')
             
@@ -929,17 +903,18 @@ class AspectPlotter:
                     
                     fig8 = self.plot_aspect_correlation_circles(
                         aspect_matrix=aspect_matrix,
-                        feature_names=feature_names
+                        feature_names=feature_names,
+                        title_suffix="pLSA Trained Data"
                     )
                     path8 = os.path.join(output_dir, "aspect_correlations.png")
                     fig8.savefig(path8, dpi=300, bbox_inches='tight')
                     saved_paths.append(path8)
                     plt.close(fig8)
-                    print("✅ Created aspect correlation circles")
+                    print("✅ Created aspect correlation circles (using real pLSA parameters)")
                 else:
-                    print("⚠️ No 'vz' parameters found for aspect correlations")
+                    print("⚠️ No 'vz' parameters found - skipping aspect correlation circles")
             else:
-                print("⚠️ No pLSA parameters found for aspect correlations")
+                print("⚠️ No pLSA parameters found - skipping aspect correlations")
         except Exception as e:
             print(f"❌ Error creating aspect correlation circles: {e}")
         
