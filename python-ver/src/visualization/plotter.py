@@ -106,6 +106,110 @@ class AspectPlotter:
         
         return fig
     
+    def plot_likelihood_convergence(self, likelihood_history: List[float], 
+                                   topic_num: int = None, 
+                                   title: str = None,
+                                   save_path: str = None) -> plt.Figure:
+        """
+        Plot log-likelihood convergence during pLSA training
+        Shows the likelihood progression across EM iterations
+        
+        Args:
+            likelihood_history: List of log-likelihood values from each EM iteration
+            topic_num: Number of topics (for title display)
+            title: Custom title for the plot
+            save_path: Path to save figure (optional)
+            
+        Returns:
+            matplotlib Figure object
+        """
+        if not likelihood_history:
+            raise ValueError("Likelihood history is empty")
+        
+        # Create figure
+        fig, ax = plt.subplots(figsize=(10, 6))
+        
+        # Plot likelihood convergence
+        iterations = np.arange(1, len(likelihood_history) + 1)
+        ax.plot(iterations, likelihood_history, 'b-o', linewidth=2, markersize=6, alpha=0.8)
+        
+        # Customize plot
+        if title:
+            ax.set_title(title, fontsize=14, fontweight='bold')
+        elif topic_num:
+            ax.set_title(f'pLSA Log-Likelihood Convergence ({topic_num} Topics)', 
+                        fontsize=14, fontweight='bold')
+        else:
+            ax.set_title('pLSA Log-Likelihood Convergence', fontsize=14, fontweight='bold')
+        
+        ax.set_xlabel('EM Iteration', fontsize=12)
+        ax.set_ylabel('Log-Likelihood', fontsize=12)
+        ax.grid(True, alpha=0.3)
+        
+        # Add convergence info
+        if len(likelihood_history) > 1:
+            final_likelihood = likelihood_history[-1]
+            initial_likelihood = likelihood_history[0]
+            improvement = final_likelihood - initial_likelihood
+            
+            # Add text box with convergence info
+            info_text = f'Initial: {initial_likelihood:.2f}\nFinal: {final_likelihood:.2f}\nImprovement: {improvement:.2f}'
+            ax.text(0.02, 0.98, info_text, transform=ax.transAxes, 
+                   bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8),
+                   verticalalignment='top', fontsize=10)
+        
+        plt.tight_layout()
+        
+        if save_path:
+            plt.savefig(save_path, dpi=300, bbox_inches='tight')
+            print(f"Saved likelihood convergence plot to {save_path}")
+        
+        return fig
+    
+    def plot_multiple_likelihood_convergence(self, likelihood_histories: Dict[int, List[float]], 
+                                           title: str = "pLSA Likelihood Convergence Comparison",
+                                           save_path: str = None) -> plt.Figure:
+        """
+        Plot multiple log-likelihood convergence curves for different topic numbers
+        
+        Args:
+            likelihood_histories: Dictionary mapping topic_num -> likelihood_history
+            title: Title for the plot
+            save_path: Path to save figure (optional)
+            
+        Returns:
+            matplotlib Figure object
+        """
+        if not likelihood_histories:
+            raise ValueError("No likelihood histories provided")
+        
+        # Create figure
+        fig, ax = plt.subplots(figsize=(12, 8))
+        
+        # Plot each convergence curve
+        colors = plt.cm.tab10(np.linspace(0, 1, len(likelihood_histories)))
+        
+        for i, (topic_num, history) in enumerate(likelihood_histories.items()):
+            if history:  # Check if history is not empty
+                iterations = np.arange(1, len(history) + 1)
+                ax.plot(iterations, history, '-o', linewidth=2, markersize=5, 
+                       color=colors[i], alpha=0.8, label=f'{topic_num} Topics')
+        
+        # Customize plot
+        ax.set_title(title, fontsize=14, fontweight='bold')
+        ax.set_xlabel('EM Iteration', fontsize=12)
+        ax.set_ylabel('Log-Likelihood', fontsize=12)
+        ax.grid(True, alpha=0.3)
+        ax.legend(fontsize=10)
+        
+        plt.tight_layout()
+        
+        if save_path:
+            plt.savefig(save_path, dpi=300, bbox_inches='tight')
+            print(f"Saved multiple likelihood convergence plot to {save_path}")
+        
+        return fig
+    
     def plot_confusion_matrix(self, results_data: Dict[str, Any], 
                             topic: int = 3, save_path: str = None) -> Tuple[plt.Figure, np.ndarray, np.ndarray]:
         """
