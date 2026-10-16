@@ -52,5 +52,4 @@ Thumbs.db
 # data files
 *.mat
 *.npz
-*.csv
 *.png
