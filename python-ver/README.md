@@ -118,6 +118,21 @@ plotter.create_comprehensive_report({
 })
 ```
 
+### Full pipeline (equivalent of `matlab-ver/main_mask.m`)
+```bash
+# gazedata.mat created by ReadwithTimestamp.m (the same file the MATLAB version uses)
+python main.py --mat ../gazedata.mat
+
+# synthetic data, quick smoke test
+python main.py --demo --train-num 5 --max-topics 3
+```
+Steps: likelihood of each window (`calc_lkh`) → AOF masks (`calc_segments`) → removal of
+time points without AOF → pLSA on the masks (`spe`) and on all attribute values (`all`) for
+1..`--max-topics` aspects, keeping the best of `--train-num` restarts (parallelized with `--jobs`).
+Defaults are the MATLAB values (window 5, threshold 0.03, 100 restarts, `1e-4`, 1000 iterations).
+Results are written to `--savedir` (`p_{spe,all}_topicK.npz`, `Akq_{spe,all}_topicK.csv`,
+`segsessions.npz`). Matching aspects with tasks and task estimation are not ported yet.
+
 ### Command Line Testing
 ```bash
 # Test with real data files (15D feature processing)

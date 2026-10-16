@@ -13,6 +13,29 @@ import os
 # Add the parent directory to the path to import utils
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from utils.math_utils import normalize, exact_prob
+from scipy.special import gammaln
+
+
+def multinomial_probs(p_v_z, observations: np.ndarray) -> np.ndarray:
+    """
+    Vectorized exact_prob: n_t! * prod_k(p_{z,k}^f_{t,k} / f_{t,k}!) for every topic z and time t
+
+    Args:
+        p_v_z: List of K multinomial parameters (each of length N)
+        observations: (N x T) matrix of AOF indicators (or counts)
+
+    Returns:
+        (K x T) matrix; equals exact_prob(p_v_z[k], observations[:, t]) element-wise
+    """
+    P = np.stack([np.asarray(p, dtype=float).ravel() for p in p_v_z])  # (K x N)
+    F = np.asarray(observations, dtype=float)                           # (N x T)
+    log_coef = gammaln(F.sum(axis=0) + 1) - gammaln(F + 1).sum(axis=0)  # (T,)
+    with np.errstate(divide='ignore'):
+        log_p = np.log(P)
+    is_zero = ~np.isfinite(log_p)
+    probs = np.exp(np.where(is_zero, 0.0, log_p) @ F + log_coef)
+    probs[(is_zero.astype(float) @ F) > 0] = 0.0  # an observed value with p = 0
+    return probs
 
 
 class FourLayerPLSA:
@@ -150,23 +173,14 @@ class FourLayerPLSA:
             session_data = sessions[s]  # (observations x time)
             T = session_data.shape[1]   # Number of time points
             
-            gamma_s = np.zeros((K, T))  # P(z|o_t, s)
-            r_s = np.zeros(T)
+            # P(z=k|s) * P(o_t|z=k) for all k, t at once; P(o_t|z=k) is exact_prob(p_v_z[k], o_t)
+            # (observations are multi-hot AOF vectors, so the four-layer model reduces to this)
+            pvz_s = self.p_z_s[s, :, np.newaxis] * multinomial_probs(self.p_v_z, session_data)  # (K x T)
             
-            for t in range(T):
-                pvz_s = np.zeros(K)
-                
-                for k in range(K):
-                    # Four-layer calculation: P(z=k|s) * P(o_t|z=k)
-                    # P(o_t|z=k) = sum_v P(v|z=k) * P(o_t|v)
-                    # Since observations are 1-hot, this simplifies to exact_prob
-                    pvz_s[k] = self.p_z_s[s, k] * exact_prob(self.p_v_z[k], session_data[:, t])
-                
-                r_s[t] = np.sum(pvz_s)
-                if r_s[t] > 0:
-                    gamma_s[:, t] = pvz_s / r_s[t]
-                else:
-                    gamma_s[:, t] = np.ones(K) / K  # Uniform distribution if denominator is 0
+            r_s = np.sum(pvz_s, axis=0)
+            positive = r_s > 0
+            gamma_s = np.full((K, T), 1.0 / K)  # Uniform distribution if denominator is 0
+            gamma_s[:, positive] = pvz_s[:, positive] / r_s[positive]
             
             gamma.append(gamma_s)
             r_values.append(r_s)
@@ -211,13 +225,8 @@ class FourLayerPLSA:
             gamma_s = gamma[s]          # (topics x time)
             
             if gamma_s.size > 0:
-                for n in range(N):  # For each feature
-                    # Find time points where feature n is observed
-                    # Since session_data is one-hot encoded observations,
-                    # we use it directly to weight the gamma values
-                    observed_times = np.where(session_data[n, :] == 1)[0]
-                    if len(observed_times) > 0:
-                        rz[:, n] += np.sum(gamma_s[:, observed_times], axis=1)
+                # Sum of gamma over the time points where feature n is observed (== 1)
+                rz += gamma_s @ (session_data == 1).T
         
         # Normalize to get P(v|z): Topic → Feature
         sum_expectations = np.sum(rz, axis=1)

@@ -61,8 +61,7 @@ def exact_prob(prob: np.ndarray, n_hist: np.ndarray) -> float:
         Exact probability value
         
     Note:
-        Translated from multi_choose_prob.m (which implements exact_prob function)
-        Modified to handle both binary and count data
+        Translated from exact_prob.m: n! * prod(p_k^x_k / x_k!) for binary and count data
     """
     prob = np.array(prob).flatten()
     n_hist = np.array(n_hist).flatten()
@@ -88,7 +87,9 @@ def exact_prob(prob: np.ndarray, n_hist: np.ndarray) -> float:
         selected_indices = np.where(n_hist == 1)[0]
         if len(selected_indices) != N:
             raise ValueError("Number of selected items doesn't match histogram sum")
-        result = np.prod(prob[selected_indices])
+        # n! * prod(p^x / x!) with x in {0, 1}, as in exact_prob.m
+        from math import factorial
+        result = factorial(N) * np.prod(prob[selected_indices])
     else:
         # Multinomial case: calculate multinomial probability
         # P(n_hist | prob) = N! / (n1! * n2! * ... * nk!) * p1^n1 * p2^n2 * ... * pk^nk

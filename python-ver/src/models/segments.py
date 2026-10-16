@@ -353,3 +353,20 @@ class SessionProcessor:
             cleaned_seglabel[s] = l
         
         return cleaned_seglabel
+
+    def remove_empty_columns(self, seqmask: List[np.ndarray]) -> List[np.ndarray]:
+        """
+        Remove time points without any detected AOF from each session mask
+
+        Args:
+            seqmask: List of AOF masks (features x time), as returned by calc_segments
+
+        Returns:
+            List of masks containing only the columns with at least one AOF
+
+        Note:
+            Translated from seqmask{s}(:, sum(seqmask{s})==0) = [] in learn_aspects_from_mask.m.
+            Must be applied before training; an all-zero column has probability 1 under
+            every topic and would only distort P(z|s).
+        """
+        return [mask[:, np.sum(mask, axis=0) > 0] for mask in seqmask]

@@ -233,7 +233,8 @@ class LikelihoodCalculator:
                 prob_set[i] = self._exact_prob_for_combo(prob_distributions[att], combo)
             
             # Calculate likelihood for each time point
-            for t in range(self.win_size, T):
+            # MATLAB: for t = win_size:T (1-based), i.e. the first window ends at index win_size-1
+            for t in range(self.win_size - 1, T):
                 window_vals = val_seq[t - self.win_size + 1:t + 1]
                 
                 # Calculate histogram with proper range for this attribute

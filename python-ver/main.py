@@ -1,213 +1,198 @@
 """
-Main execution script for AspectEstimation
-Translated from MATLAB main scripts
+Main pipeline of AspectEstimation (two-step approach)
+
+Translated from matlab-ver/main_mask.m (calc_lkh.m + learn_aspects_from_mask.m):
+
+  1st step: likelihood-based short-term analysis -> AOF masks   (calc_lkh, calc_segments)
+  2nd step: pLSA on the AOF masks ("spe") and, for comparison, on all attribute values ("all")
+
+Usage:
+  python main.py --mat ../gazedata.mat          # gazedata.mat made by ReadwithTimestamp.m
+  python main.py --demo --train-num 5           # synthetic data (smoke test)
 """
 
-import sys
+import argparse
+import contextlib
+import io
 import os
+import sys
+import time
+from concurrent.futures import ProcessPoolExecutor
+from typing import Dict, List, Tuple
+
 import numpy as np
-from typing import List, Dict, Any
 
-# Add src directory to path
-sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
+sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'src'))
 
-from models.plsa import PLSA, train_multiple_runs
-from data.data_loader import GazeDataLoader, LikelihoodCalculator
-from utils.math_utils import normalize
+from data.data_loader import LikelihoodCalculator
+from models.plsa import FourLayerPLSA
+from models.segments import SegmentCalculator, SessionProcessor
 
 
-def main_likelihood_calculation():
+# ---------------------------------------------------------------- data input
+def load_gazedata_mat(path: str) -> Tuple[List[np.ndarray], List[np.ndarray]]:
     """
-    Main function for likelihood calculation
-    
-    Translated from calc_lkh.m
+    Load semantic_attributes / semantic_attribute_seq from a MATLAB gazedata.mat
+
+    The cell arrays are indexed {usr, task} in MATLAB and traversed with (:) there,
+    i.e., in column-major order, so the same order is used here.
     """
-    print("Starting likelihood calculation...")
-    
-    # Load data
-    loader = GazeDataLoader()
-    try:
-        gaze_data = loader.load_gazedata()
-        print("Data loaded successfully")
-    except FileNotFoundError:
-        print("Warning: gazedata.mat not found. Creating sample data for testing.")
-        # Create sample data for testing
-        gaze_data = create_sample_data()
-        loader.semantic_attributes = gaze_data['semantic_attributes']
-        loader.semantic_attribute_seq = gaze_data['semantic_attribute_seq']
-    
-    # Calculate likelihood for each session
-    calc = LikelihoodCalculator(win_size=5)
-    S = len(loader.semantic_attribute_seq) if loader.semantic_attribute_seq else 1
-    
-    likelihood_results = {}
-    
-    for s in range(S):
-        print(f"Processing session {s+1}/{S}")
-        
-        # Calculate attribute probabilities for this session
-        prob_att = loader.calculate_attribute_probabilities(s)
-        
-        # Get attribute sequence for this session
-        attseq = loader.semantic_attribute_seq[s]
-        
-        # Calculate likelihood
-        session_lkh = calc.calculate_session_likelihood(attseq, prob_att)
-        likelihood_results[f'session_{s}'] = session_lkh
-    
-    # Save results
-    from data.data_loader import save_likelihood_results
-    save_likelihood_results(likelihood_results, "lkh_win_5.npz")
-    print("Likelihood calculation completed and saved to lkh_win_5.npz")
+    import scipy.io
+    data = scipy.io.loadmat(path)
+
+    def to_list(cells: np.ndarray) -> List[np.ndarray]:
+        out = [np.asarray(c).astype(int) for c in cells.flatten(order='F')]
+        if any(c.size == 0 for c in out):
+            raise ValueError("gazedata contains empty sessions")
+        return out
+
+    return to_list(data['semantic_attributes']), to_list(data['semantic_attribute_seq'])
 
 
-def main_plsa_training():
+def from_reader_sessions(data: Dict) -> Tuple[List[np.ndarray], List[np.ndarray]]:
     """
-    Main function for pLSA training
-    
-    Translated from main training workflow
+    Convert GazeDataReader output (dicts keyed by (usr, task)) to session lists,
+    ordered like MATLAB's cell(:) (column-major: by task, then by user)
     """
-    print("Starting pLSA training...")
-    
-    # Load or create sample data
-    try:
-        loader = GazeDataLoader()
-        gaze_data = loader.load_gazedata()
-        sessions = extract_sessions_from_data(gaze_data)
-    except:
-        print("Using sample data for testing")
-        sessions = create_sample_sessions()
-    
-    # Training parameters
-    n_topics = 5
-    train_lim = 1e-6
-    train_num = 3  # Reduced for testing
-    max_itr = 100
-    
-    print(f"Training pLSA with {n_topics} topics...")
-    
-    # Train model with multiple runs
-    best_params, best_history = train_multiple_runs(
-        sessions, n_topics, train_lim, train_num, max_itr
-    )
-    
-    print(f"Training completed. Best log-likelihood: {best_history[-1]:.4f}")
-    
-    # Save results
-    np.savez("plsa_results.npz", 
-             p_z_s=best_params['zs'],
-             p_v_z=best_params['vz'],
-             log_likelihood=best_history)
-    
-    print("Results saved to plsa_results.npz")
-    
-    return best_params, best_history
+    keys = sorted(data['session'].keys(), key=lambda k: (k[1], k[0]))
+    attrs = [np.asarray(data['session'][k]['semantic_attributes']).astype(int) for k in keys]
+    seqs = [np.asarray(data['session'][k]['semantic_attribute_seq']).astype(int) for k in keys]
+    return attrs, seqs
 
 
-def create_sample_data() -> Dict[str, Any]:
-    """
-    Create sample data for testing when real data is not available
-    """
-    print("Creating sample data...")
-    
-    # Sample parameters
-    n_sessions = 3
-    n_attributes = 5
-    n_timepoints = 100
-    n_values_per_attr = [3, 4, 3, 5, 4]  # Different number of values per attribute
-    
-    semantic_attributes = []
-    semantic_attribute_seq = []
-    
-    for s in range(n_sessions):
-        # Create random attribute values for this session
-        session_attrs = []
-        for attr in range(n_attributes):
-            attr_values = np.random.randint(1, n_values_per_attr[attr] + 1, n_timepoints)
-            session_attrs.append(attr_values)
-        
-        session_attrs = np.array(session_attrs)
-        semantic_attributes.append(session_attrs)
-        semantic_attribute_seq.append(session_attrs)
-    
-    return {
-        'semantic_attributes': semantic_attributes,
-        'semantic_attribute_seq': semantic_attribute_seq
-    }
+def create_demo_data(n_users: int = 8, seed: int = 0) -> Tuple[List[np.ndarray], List[np.ndarray]]:
+    """Synthetic sessions in the setting of the paper (12 items, 5 attributes x 3 values, 3 tasks)"""
+    rng = np.random.default_rng(seed)
+    # attributes: price, screen size, CPU score, memory capacity, weight (each value has 4 items)
+    kb = np.stack([rng.permutation(np.repeat([1, 2, 3], 4)) for _ in range(5)], axis=1)
+    task_values = {1: [(2, 3), (3, 3)], 2: [(1, 1), (4, 1)], 3: [(3, 3), (0, 1)]}
+    attrs, seqs = [], []
+    for task in (1, 2, 3):  # column-major order: task, then user
+        for _ in range(n_users):
+            a = kb[rng.permutation(12)]
+            score = sum((a[:, k] == v).astype(int) for k, v in task_values[task])
+            cand = np.argsort(-(score + rng.random(12) * 0.1))[:2]
+            f = list(rng.permutation(12))
+            f += [int(cand[i % 2]) if rng.random() > 0.15 else int(rng.integers(12)) for i in range(14)]
+            f += list(rng.integers(0, 12, 6))
+            attrs.append(a)
+            seqs.append(a[np.array(f)].T)
+    return attrs, seqs
 
 
-def create_sample_sessions() -> List[np.ndarray]:
+# ---------------------------------------------------------------- 1st step
+def calc_lkh(semantic_attributes: List[np.ndarray], semantic_attribute_seq: List[np.ndarray],
+             win_size: int = 5) -> Tuple[List[Dict[int, np.ndarray]], np.ndarray]:
     """
-    Create sample session data for pLSA training
-    """
-    n_sessions = 3
-    n_vocabulary = 10
-    n_timepoints = 50
-    
-    sessions = []
-    for s in range(n_sessions):
-        # Create binary observation matrix (vocabulary x time)
-        session_data = np.random.choice([0, 1], size=(n_vocabulary, n_timepoints), p=[0.7, 0.3])
-        sessions.append(session_data)
-    
-    return sessions
+    Likelihood of the observed-attribute distribution in each window (calc_lkh.m)
 
-
-def extract_sessions_from_data(gaze_data: Dict[str, Any]) -> List[np.ndarray]:
-    """
-    Extract session data in the format expected by pLSA
-    
-    Args:
-        gaze_data: Loaded gaze data
-        
     Returns:
-        List of session data matrices
+        (lkh_ses, N_value): lkh_ses[s][att] is the likelihood sequence, N_value the number of
+        values of each attribute type (max over all sessions)
     """
-    # This function needs to be adapted based on the actual structure of the .mat file
-    # For now, create a placeholder implementation
-    sessions = create_sample_sessions()
-    return sessions
+    N_value = np.max(np.vstack(semantic_attributes), axis=0)
+    calc = LikelihoodCalculator(win_size)
+    lkh_ses = []
+    for attrs, seq in zip(semantic_attributes, semantic_attribute_seq):
+        # phi_k = N_k / N: relative frequency of each value in the catalog of the session
+        prob_att = [np.bincount(attrs[:, a], minlength=N_value[a] + 1)[1:] / attrs.shape[0]
+                    for a in range(len(N_value))]
+        lkh_ses.append(calc.calculate_session_likelihood(seq, prob_att))
+    return lkh_ses, N_value
 
 
-def run_full_pipeline():
-    """
-    Run the complete AspectEstimation pipeline
-    """
-    print("=" * 50)
-    print("AspectEstimation Python Implementation")
-    print("=" * 50)
-    
-    # Step 1: Calculate likelihood
-    print("\nStep 1: Calculating likelihood...")
-    main_likelihood_calculation()
-    
-    # Step 2: Train pLSA model
-    print("\nStep 2: Training pLSA model...")
-    best_params, best_history = main_plsa_training()
-    
-    # Step 3: Display results
-    print("\nStep 3: Results summary")
-    print(f"Final log-likelihood: {best_history[-1]:.4f}")
-    print(f"Number of topics: {len(best_params['vz'])}")
-    print(f"Convergence iterations: {len(best_history)}")
-    
-    print("\nPipeline completed successfully!")
+# ---------------------------------------------------------------- 2nd step
+def _train_once(args):
+    sessions, n_topics, lim, max_itr, seed = args
+    np.random.seed(seed)
+    model = FourLayerPLSA(n_topics)
+    with contextlib.redirect_stdout(io.StringIO()):
+        params, history = model.fit(sessions, None, lim, max_itr)
+    return params, history
+
+
+def train(sessions: List[np.ndarray], n_topics: int, lim: float, train_num: int,
+          max_itr: int, jobs: int = 1, seed: int = 0) -> Tuple[Dict, List[float]]:
+    """Best of train_num random restarts by final log-likelihood (train.m; parfor -> processes)"""
+    tasks = [(sessions, n_topics, lim, max_itr, seed + i) for i in range(train_num)]
+    if jobs > 1:
+        with ProcessPoolExecutor(max_workers=jobs) as ex:
+            results = list(ex.map(_train_once, tasks))
+    else:
+        results = [_train_once(t) for t in tasks]
+    results = [r for r in results if r[1]]
+    if not results:
+        raise RuntimeError("All training runs failed (log-likelihood decreased at the first iteration)")
+    return max(results, key=lambda r: r[1][-1])
+
+
+def learn_aspects(semantic_attributes: List[np.ndarray], semantic_attribute_seq: List[np.ndarray],
+                  win_size: int = 5, thr: float = 0.03, max_topics: int = 5,
+                  train_num: int = 100, lim: float = 1e-4, max_itr: int = 1000,
+                  jobs: int = 1, seed: int = 0, savedir: str = 'results') -> Dict:
+    """Run the whole pipeline (main_mask.m: calc_lkh -> learn_aspects_from_mask)"""
+    S = len(semantic_attribute_seq)
+    lkh_ses, N_value = calc_lkh(semantic_attributes, semantic_attribute_seq, win_size)
+    if not np.all(N_value == 3):
+        # the offsets of session_all (+3, +6, ...) are fixed to 3 values per attribute, as in MATLAB
+        raise ValueError(f"3 values per attribute type are expected, got {N_value}")
+
+    seglabel, seqmask = SegmentCalculator(win_size, thr).calc_segments(
+        lkh_ses, semantic_attributes, semantic_attribute_seq, win_size, thr)
+    processor = SessionProcessor()
+    with contextlib.redirect_stdout(io.StringIO()):
+        session_all = processor.create_session_all(semantic_attribute_seq, N_value)
+    session_spe = processor.remove_empty_columns(seqmask)
+
+    n_aof = sum(m.shape[1] for m in session_spe)
+    n_no_aof = sum(1 for m in session_spe if m.shape[1] == 0)
+    print(f"{S} sessions, {n_aof} time points with AOF, {n_no_aof} sessions without any AOF")
+
+    os.makedirs(savedir, exist_ok=True)
+    np.savez(os.path.join(savedir, 'segsessions.npz'),
+             seglabel=np.array(seglabel, dtype=object), seqmask=np.array(seqmask, dtype=object),
+             session_all=np.array(session_all, dtype=object), win_size=win_size, thr=thr)
+
+    results = {'seglabel': seglabel, 'seqmask': seqmask, 'session_all': session_all,
+               'spe': {}, 'all': {}}
+    for topic in range(1, max_topics + 1):
+        for tag, sessions in (('spe', session_spe), ('all', session_all)):
+            t0 = time.time()
+            params, history = train(sessions, topic, lim, train_num, max_itr, jobs, seed)
+            vz = np.stack(params['vz'], axis=1)  # (features x topics) as cell2mat(p.vz)
+            np.savez(os.path.join(savedir, f'p_{tag}_topic{topic}.npz'),
+                     zs=params['zs'], vz=vz, L=np.array(history))
+            np.savetxt(os.path.join(savedir, f'Akq_{tag}_topic{topic}.csv'), vz, delimiter=',')
+            results[tag][topic] = {'params': params, 'history': history}
+            print(f"topic {topic} [{tag}]: log-likelihood {history[-1]:.4f}, "
+                  f"{len(history)} iterations, {time.time() - t0:.1f}s")
+    return results
+
+
+def main():
+    parser = argparse.ArgumentParser(description="AspectEstimation pipeline (main_mask.m)")
+    src = parser.add_mutually_exclusive_group(required=True)
+    src.add_argument('--mat', type=str, help="gazedata.mat created by ReadwithTimestamp.m")
+    src.add_argument('--demo', action='store_true', help="use synthetic data")
+    parser.add_argument('--win-size', type=int, default=5)
+    parser.add_argument('--thr', type=float, default=0.03)
+    parser.add_argument('--max-topics', type=int, default=5)
+    parser.add_argument('--train-num', type=int, default=100, help="number of random restarts")
+    parser.add_argument('--lim', type=float, default=1e-4, help="EM convergence threshold")
+    parser.add_argument('--max-itr', type=int, default=1000)
+    parser.add_argument('--jobs', type=int, default=os.cpu_count() or 1)
+    parser.add_argument('--seed', type=int, default=0)
+    parser.add_argument('--savedir', type=str, default='results')
+    args = parser.parse_args()
+
+    if args.demo:
+        attrs, seqs = create_demo_data(seed=args.seed)
+    else:
+        attrs, seqs = load_gazedata_mat(args.mat)
+
+    learn_aspects(attrs, seqs, args.win_size, args.thr, args.max_topics, args.train_num,
+                  args.lim, args.max_itr, args.jobs, args.seed, args.savedir)
 
 
 if __name__ == "__main__":
-    import argparse
-    
-    parser = argparse.ArgumentParser(description="AspectEstimation Python Implementation")
-    parser.add_argument("--mode", choices=["likelihood", "plsa", "full"], 
-                       default="full", help="Execution mode")
-    parser.add_argument("--topics", type=int, default=5, 
-                       help="Number of topics for pLSA")
-    
-    args = parser.parse_args()
-    
-    if args.mode == "likelihood":
-        main_likelihood_calculation()
-    elif args.mode == "plsa":
-        main_plsa_training()
-    else:
-        run_full_pipeline()
+    main()
