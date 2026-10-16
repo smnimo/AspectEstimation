@@ -1,52 +1,156 @@
-# TODO (python-ver vs matlab-ver)
+# TODO / handover notes for python-ver
 
-Status of the comparison with `matlab-ver` / the paper (Shimonishi & Kawashima, JEMR 2020).
+Goal: `python-ver` must reproduce the computations of `matlab-ver` (the code behind the paper
+*Shimonishi & Kawashima (2020), "A Two-step Approach for Interest Estimation from Gaze Behavior in Digital
+Catalog Browsing", J. Eye Movement Research 13(1):4*). The MATLAB code is the reference; the paper is the
+specification where MATLAB is ambiguous. Read sections 1-4 first, then pick a task from section 6.
 
-## Done
+## 1. Background (what is computed)
 
-- Window loop of `LikelihoodCalculator.calculate_session_likelihood` started one step late (first window skipped); now `range(win_size - 1, T)` like `t = win_size:T`.
-- `exact_prob` for 0/1 vectors lacked `n!`; now identical to `exact_prob.m`.
-- Time points without AOF are removed before training (`SessionProcessor.remove_empty_columns`).
-- `main.py` rewritten as the pipeline of `main_mask.m` (likelihood -> AOF mask -> pLSA `spe`/`all`, MATLAB default parameters, parallel restarts).
-- E-step / M-step of `FourLayerPLSA` vectorized (same results as the loop version, ~50x faster).
-- Python files in `python-ver/` converted to LF.
+A participant looks at 12 items (laptops, 3x4 grid) to fulfil one of 3 tasks. Each item has 5 attributes
+(price, screen size, CPU score, memory capacity, weight), each with 3 values (1 = low/small/light ... 3 = high/large/heavy);
+every value is shared by 4 of the 12 items. A *session* = one participant x one task (paper: 37 x 3 = 111).
 
-## Open
+- **Step 1 - attributes-of-focus (AOF)** (`calc_lkh.m`, `calc_segments.m`; paper Eq. 1):
+  gaze -> sequence of browsed items (time = item transitions) -> attribute-value sequence `v_t` (5 x T).
+  A window of length l = 5 (shift 1) gives a count vector per attribute; its likelihood under a multinomial with
+  phi_k = N_k / N (neutral browsing) is computed. If likelihood < thr (0.03), the window is "distinctive" and every
+  value with `count/l >= phi_k` becomes an AOF for all time points of that window. Result: binary mask `seqmask`
+  (15 x T, rows = attribute-major: price v1..v3, screen v1..v3, CPU, memory, weight).
+- **Step 2 - pIAF / pLSA** (`plsa.m`, `estep.m`, `mstep.m`; paper Eq. 2, 3, 8):
+  each time point is a multi-hot vector f_t (the AOF); P(f_t | aspect r) = n_t! prod_k p_{r,k}^{f_t,k} (`exact_prob.m`);
+  EM learns `p.vz` (aspect x 15, the aspects) and `p.zs` (session x aspect, the interest theta(s)).
+  Trained on `seqmask` ("spe", with the AOF step) and on all attribute values `session_all` ("all", without the step).
+- **Evaluation** (`calc_matching.m`, `CalcEval.m`, `CalcSim.m`, `plot_conf_matrix.m`; paper Eq. 4, Fig. 8, Table 2):
+  match learned aspects to the 3 tasks, cosine similarity to task-related attribute values, task estimation = argmax theta(s).
+  Paper results (3 aspects): cosine ~0.82-0.86 with AOF vs ~0.58-0.69 without (read from Fig. 8); accuracy 83.8 % with
+  Table 2 = `[[32,0,3,2],[0,30,7,0],[4,0,31,2]]` (last column = "no comparison").
 
-### 1. Matching aspects with tasks / evaluation (not ported)
-- `calc_matching.m`: permutation of learned aspects that maximizes the cosine similarity to `giventask` (`task_att`).
-- `CalcEval.m` / `CalcSim.m`: cosine similarity between task-related attribute values and aspects (paper Eq. 4, Fig. 8), task estimation by `argmax_r theta(s)` (paper Table 2, 83.8 %), for `spe` and `all`, topics 1..5.
-- `plot_conf_matrix.m` input (confusion matrix) depends on the above.
-- `task_att.mat` / `giventask` has to be provided or re-created from paper Table 1.
+## 2. MATLAB -> Python map
 
-### 2. `GazeDataReader.load_all_sessions` does not follow `LoadGaze.m`
-- `load_all_sessions` -> `_load_available_data_files` / `process_session` uses raw ~60 Hz grid samples as `f`: no 150 ms duration filter, no merging of consecutive identical targets. The window length 5 then means ~83 ms instead of 5 item transitions.
-- `process_session` uses `task_id` for `list - task*100` instead of `floor(cont(1)/100)`, and `dur` is not the filtered duration.
-- `load_session_from_files` (-> `_process_session_data`) is correct (checked on `sample_data`: identical to `LoadGaze.m`); `load_all_sessions` should call it.
-- Not ported: `Set_selected.m` (`session{usr,task}.selected`), `timestamp.list` handling is only partially checked.
-- `GazeDataReader.save_gazedata` stores sessions in dict order, not in MATLAB's column-major `cell(:)` order; `main.from_reader_sessions` sorts by (task, usr).
+| MATLAB (`matlab-ver/`) | Python (`python-ver/`) | State |
+|---|---|---|
+| `ReadwithTimestamp.m`, `LoadGaze.m` | `src/data/gaze_reader.py` `GazeDataReader.load_session_from_files` / `_process_session_data` | OK (verified on `sample_data`); `load_all_sessions` wrong, see T2 |
+| `Set_selected.m` | - | not ported (T2) |
+| `calc_lkh.m`, `exact_prob.m`, `HomogenousProduct.m` | `main.calc_lkh`, `src/data/data_loader.py` `LikelihoodCalculator`, `src/utils/math_utils.py` | OK |
+| `calc_segments.m` | `src/models/segments.py` `SegmentCalculator.calc_segments` | OK |
+| `seqmask(:, sum==0) = []` | `SessionProcessor.remove_empty_columns` | OK |
+| `session_all` | `SessionProcessor.create_session_all` | OK (3 values per attribute assumed, as in MATLAB) |
+| `plsa.m`, `estep.m`, `mstep.m`, `normalize.m` | `src/models/plsa.py` `FourLayerPLSA`, `multinomial_probs` | OK (vectorized) |
+| `train.m` (best of 100 restarts, parfor) | `main.train` (process pool) | OK; old `plsa.train_multiple_runs` differs, see T3 |
+| `main_mask.m`, `learn_aspects_from_mask.m` | `main.py` (`learn_aspects`, CLI) | OK |
+| `calc_matching.m`, `CalcEval.m`, `CalcSim.m`, `plot_conf_matrix.m`, `plot_eval_AoF.m` | - | not ported (T1) |
+| `plot_*.m` | `src/visualization/plotter.py` | exists, not re-verified against MATLAB |
+| `confirm_bias.m`, `learn_aspects_from_part.m`, `for_rev2.m`, `test_cor_p.m`, `multi_choose_prob.m` | - | not ported / not needed for the main flow (`multi_choose_prob.m` is NOT `exact_prob`) |
 
-### 3. Training parameters of the old API differ from MATLAB
-- `train_multiple_runs` defaults: `train_lim=1e-6`, `train_num=10`, `max_itr=100` (MATLAB: `1e-4`, `100`, `1000`). `main.py` already uses the MATLAB values.
-- `FourLayerPLSA.fit` / `train_multiple_runs` print every run; `train_multiple_runs` silently skips runs whose history is empty (MATLAB would error).
-- `train_standard_plsa` passes `segments=None` positionally and is unused.
+## 3. Data conventions (easy to get wrong)
 
-### 4. Small differences from MATLAB
-- `LikelihoodCalculator` / `GazeDataLoader.calculate_attribute_probabilities` use the value range present in the session (`min..max`); MATLAB uses `1..N_value` over all sessions (`main.calc_lkh` already follows MATLAB). The loader method should be aligned.
-- `SegmentCalculator.calc_segments` takes `N_value` from the sequences of all sessions (MATLAB: session 1 only) and has hard-coded fallbacks (`[3,4,3,5,4]`).
-- `SessionProcessor.create_session_all` offsets (+3, +6, ...) assume 3 values per attribute (same as MATLAB); `main.py` raises otherwise.
-- `SessionProcessor.create_segsessions` / `_clean_segment_labels` are not used by the pipeline (MATLAB saves `segsession` but trains on `seqmask`); `create_segsessions` has a fallback vocabulary size of 57 and masks only the first `min_rows` rows.
-- AOF rule is `x/l >= phi` in the code (MATLAB), `>` in the paper (Sec. "AOF detection").
-- `exact_prob` normalizes `prob` when it does not sum to 1; `exact_prob.m` discards the normalization. Irrelevant for valid input.
-- `plsa.py` still imports `exact_prob` (unused after vectorization).
+- `gazedata.mat` (made by `ReadwithTimestamp.m`): `semantic_attributes{usr,task}` = 12x5 `KB(list,:)`;
+  `semantic_attribute_seq{usr,task}` = 5xT `KB(list(f),:)'`; `session{usr,task}` with `.f .dur .list .task .usr .candidate`.
+  MATLAB traverses cells with `(:)` = **column-major**, i.e. ordered by task, then user (`calc_lkh.m`, `plot_conf_matrix.m`:
+  rows `(task-1)*n_usr+1 : task*n_usr` belong to `task`). `main.load_gazedata_mat` and `main.from_reader_sessions` follow this.
+- `knowledge.csv` = KB, 12 items x 5 attributes, values 1..3. Column order (verified with the `candidate` items of
+  `ReadwithTimestamp.m`): price, screen size, CPU score, memory capacity, weight.
+- `.list` file = the 12 item ids of the session, task in the hundreds digit (e.g. `101 102 103 109 ...` = task 1);
+  `item - task*100` indexes KB; position in the list = grid position (1..12, row-major 3x4) used by `f`.
+- Gaze CSV = `[timestamp(us), right_x, right_y, left_x, left_y]`, normalized 0..1, `-1` = missing.
+- Tasks (paper Table 1) and task-related values (verified: the `candidate` items of `ReadwithTimestamp.m` satisfy them):
+  task 1 (home, movies/games): CPU = 3, memory = 3; task 2 (carry, notes): screen = 1, weight = 1; task 3 (low cost, web): price = 1, memory = 3.
+  As 15-dim vectors (index = attribute*3 + value-1): task 1 -> {8, 11}, task 2 -> {3, 12}, task 3 -> {0, 11}.
+  `task_att.mat` (`giventask`, 3x15, rows normalized by `normalize(giventask, 2)`) is **not in the repo**; the vectors above are inferred.
+- Time index: MATLAB is 1-based, windows are `t = win_size:T` -> 0-based `win_size-1 .. T-1` (this was a bug, fixed).
 
-### 5. Stale scripts / documentation
-- `main_four_layer.py`, `test_four_layer.py`, `test_comprehensive_visualization.py` use random/mock data, identity observation model, and (in `test_with_arguments.py`) feed the raw 5xT attribute sequence to `fit` instead of AOF masks. They do not exercise the MATLAB pipeline.
-- `test_actual_data.py` / `test_likelihood_convergence.py` rely on `load_all_sessions` (see 2).
-- `README.md`: "Numerical results match MATLAB" is only true for the parts listed under Done; Quick Start uses argument names (`gaze_csv_path`, `list_file_path`) and attributes (`reader.knowledge_data`) that need to be checked against the code; the "4-layer" description is an identity mapping `P(o|v)` and does not change the computation.
+## 4. Environment and verification
+
+```bash
+cd python-ver
+python3 -m venv .venv && .venv/bin/pip install -r requirements.txt   # numpy is not installed system-wide
+.venv/bin/python -m pytest tests -q          # MATLAB-equivalence tests (10 tests, ~15 s)
+.venv/bin/python main.py --demo --train-num 5 --max-topics 3 --savedir /tmp/res   # smoke test, synthetic data
+.venv/bin/python main.py --mat ../gazedata.mat                                    # real data (MATLAB defaults: 100 restarts, 5 topics)
+```
+
+- `tests/test_matlab_equivalence.py` contains line-by-line numpy re-implementations of `calc_lkh`, `calc_segments`, `plsa/estep/mstep`,
+  `exact_prob` and `LoadGaze`; new ported code should get the same kind of test (reference = MATLAB semantics, not the Python code).
+- MATLAB is not available in the dev environment; "equivalence" = agreement with those re-implementations, not with MATLAB output (see T6).
+- Runtime: 111 sessions, 100 restarts, K = 3: ~50 s per (topic, spe/all) on 8 cores.
+- `python-ver/results/`, `aspectmodel/`, `.venv` are git-ignored; do not commit outputs.
+- Line endings: all python-ver files are LF.
+
+## 5. Done
+
+- `calculate_session_likelihood` skipped the first window (`range(win_size, T)`); now `range(win_size - 1, T)`.
+- `exact_prob` for 0/1 vectors lacked `n!`; now equal to `exact_prob.m` (`plsa.py` uses `multinomial_probs`, the vectorized version).
+- All-zero AOF columns are removed before training (`remove_empty_columns`).
+- `main.py` is the `main_mask.m` pipeline; old broken `main.py` (random sessions, wrong call) removed.
+- E-step/M-step vectorized (identical iterations / log-likelihood / parameters to the loop version, ~50x faster).
+- `tests/test_matlab_equivalence.py` added.
+
+## 6. Open tasks (suggested order: T1, T2, T6, then T3-T5)
+
+### T1. Port the evaluation (matching, cosine similarity, task estimation)  - highest value
+Where: new module (e.g. `src/models/evaluation.py`) + an option/script that runs it on `main.learn_aspects` results.
+Reference: `calc_matching.m`, `CalcEval.m`, `CalcSim.m`, `plot_conf_matrix.m`, `plot_sim.m`, `plot_eval_AoF.m`.
+- `giventask`: 3x15 binary matrix from section 3 (or load `task_att.mat` if the user provides it).
+- Matching: for topic K = 2..5 (and `spe`/`all`) choose the permutation of aspects maximizing `sum(diag(cosine(giventask_normalized, vz')))` over the first
+  min(3, K) aspects (`perms` in MATLAB; `scipy.optimize.linear_sum_assignment` gives the same optimum) and permute both `vz` and `zs`.
+  NOTE: in the shipped `calc_matching.m` these two blocks are inside `%{ ... %}` and only the `p_part*` block (`learn_aspects_from_part.m`, 10 parts) is active;
+  `CalcEval.m` expects matched `p_spe_topicK` / `p_all_topicK`, so implement the (commented) `spe`/`all` blocks.
+- Similarity (`CalcEval`): `cor_task = cosine(normalize(giventask,2) rows, vz columns)` (3 x K); `cortop(s) = cor_task(task(s), argmax_r zs(s,r))`.
+- Confusion matrix (`plot_conf_matrix`, topic = 3): sessions of `task` are rows `(task-1)*n_usr+1 : task*n_usr` of `zs`;
+  `est = argmax zs`; if `max zs == 1/n_task` (uniform -> session without AOF) the estimate is "no comparison" (use `np.isclose`).
+  Result: `n_task x (n_task+1)` counts, accuracy = trace / total (paper: 93/111 = 83.8 %).
+- Acceptance: unit tests with synthetic data where the true permutation is known; on real data the accuracy and cosines should be in the range of the paper
+  (random restarts, so not exact). Needs the 111-session `gazedata.mat` (T6) or a user-provided result.
+
+### T2. `GazeDataReader.load_all_sessions` does not follow `ReadwithTimestamp.m` / `LoadGaze.m`
+Where: `src/data/gaze_reader.py`.
+- `load_all_sessions` -> `process_session` uses the raw ~60 Hz grid samples as `f` (no 150 ms filter, no merge of identical consecutive targets),
+  takes the task from `task_id` instead of `floor(cont(1)/100)`, and `dur` is not the filtered duration. Should call `_process_session_data` (correct).
+- `_load_available_data_files` processes only the first csv/list pair it finds (they are not even paired by name) and silently falls back to
+  fake sessions (`_create_sample_sessions`); replace by an explicit directory + `timestamp.list` loop:
+  `session_id = mod(count,4)+1`, new user when `session_id == 1`, skip `session_id == 4`, `{usr, task}` keys.
+- `save_gazedata` stores sessions in dict order; MATLAB order is column-major (`main.from_reader_sessions`).
+- Not ported: `Set_selected.m` (hard-coded `session{usr,task}.selected = list(idx)` table for 37 users x 3 tasks).
+- Acceptance: for `sample_data/170116024150092.*` the result equals `load_session_from_files` (test exists for that path); add a multi-session test with a tiny fake `timestamp.list`.
+
+### T3. Old training API differs from MATLAB
+Where: `src/models/plsa.py` `train_multiple_runs`, `train_standard_plsa`; `FourLayerPLSA.fit`.
+- Defaults `train_lim=1e-6`, `train_num=10`, `max_itr=100` (MATLAB `1e-4`, `100`, `1000`; `main.py` already uses MATLAB values).
+- `fit` prints every run (and a warning when no observation model is set); `train_multiple_runs` silently skips runs with empty history (MATLAB errors).
+- `train_standard_plsa` passes `segments=None` positionally and is unused. Consider making `main.train` the single implementation.
+
+### T4. Small differences from MATLAB
+- `data_loader.GazeDataLoader.calculate_attribute_probabilities` uses the value range present in the session (`min..max`); MATLAB uses `1..N_value` over all sessions
+  (`main.calc_lkh` already does the latter). Align or remove.
+- `SegmentCalculator.calc_segments`: `N_value` from all sessions (MATLAB: session 1) and fallback `[3,4,3,5,4]` / 5 attributes when empty.
+- `SessionProcessor.create_segsessions` / `_clean_segment_labels` are not used (MATLAB saves `segsession` but trains on `seqmask`); `create_segsessions` has a
+  fallback vocabulary of 57 and masks only the first `min_rows` rows.
+- AOF rule: code/MATLAB use `count/l >= phi_k`, the paper writes `>` (see decision D1).
+- `exact_prob` renormalizes `prob` if it does not sum to 1; `exact_prob.m` computes `prob_vec = normalize(prob)` and then overwrites it (no normalization). Irrelevant for valid input.
+- `plsa.py` still imports `exact_prob` (unused).
+
+### T5. Stale scripts and README
+- Confirmed README errors (Quick Start): `load_session_from_files(gaze_csv_path=..., list_file_path=...)` (actual: `csv_file`, `list_file`);
+  `reader.knowledge_data.values` does not exist (`reader.knowledge_base`, a 12x5 int array = KB, not a P(o|v) matrix);
+  the example trains on `semantic_attribute_seq_onehot` (that is the "all" setting, not AOF masks); "Data Format" describes `knowledge.csv` as a
+  "Feature->Observation mapping" and a `.list` as `[101, 102, 103, 201, ...]` (all ids of a session share the task digit).
+  "Numerical results match MATLAB" is only true for the parts in the map above. The "4-layer" wording: `P(o|v)` is an identity mapping and does not change any computation.
+- `main_four_layer.py`, `test_four_layer.py`, `test_comprehensive_visualization.py` use random/mock data; `test_with_arguments.py` feeds the raw 5xT attribute
+  sequence (not an AOF mask) to `fit`; `test_actual_data.py` / `test_likelihood_convergence.py` depend on `load_all_sessions` (T2). Fix or delete; they do not test MATLAB equivalence.
 - `gaze_reader.main_read_gaze_data` uses `GazeDataReader("../../..")` as base path.
 
-### 6. Verification still missing
-- No end-to-end comparison with MATLAB output: run `main_mask.m` and `main.py --mat gazedata.mat` on the same `gazedata.mat` (all 111 sessions) and compare `lkh_ses`, `seqmask`, and the learned `p.vz` (same initialization needed, or compare log-likelihood / aspect similarity).
-- `sample_data` contains one session only; the multi-session training has only been tested on synthetic data.
-- Other MATLAB scripts not ported: `confirm_bias.m`, `learn_aspects_from_part.m`, `for_rev2.m`, `test_cor_p.m`, `plot_*` variants for the paper figures.
+### T6. End-to-end verification against real MATLAB output
+- Only synthetic data (multi-session) and one real session (`sample_data/`, gaze -> AOF mask looks right: CPU-high and memory-large rows lit for task 1) were checked.
+- Needs from the user: `gazedata.mat` (111 sessions) and, ideally, MATLAB's `lkh_win_5.mat`, `segsessions.mat`, `results/p_*_topicK.mat`.
+  Compare `lkh_ses`, `seqmask` exactly; compare learned aspects statistically (random init) via T1 metrics.
+- `main.load_gazedata_mat` has never been run on a real `.mat`: it assumes `scipy.io.loadmat` returns object arrays of shape (37, 3) with 2-D numeric cells.
+- Other MATLAB scripts not ported: `confirm_bias.m`, `learn_aspects_from_part.m`, `for_rev2.m`, `test_cor_p.m`.
+
+## 7. Decisions needed from the user
+
+- D1. AOF threshold comparison: keep MATLAB `>=` (current) or follow the paper `>`?
+- D2. Provide `task_att.mat` (or confirm the `giventask` vectors in section 3).
+- D3. Add a `.gitattributes` (`python-ver/** text eol=lf`) to keep LF on Windows?
+- D4. Stale scripts in T5: fix or delete?
+- D5. Is MATLAB output (T6) available for comparison?
