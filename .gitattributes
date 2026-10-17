@@ -1,0 +1,19 @@
+# code and documents: LF on every platform
+*.m            text eol=lf
+*.R            text eol=lf
+*.py           text eol=lf
+*.md           text eol=lf
+*.txt          text eol=lf
+README         text eol=lf
+.gitignore     text eol=lf
+.gitattributes text eol=lf
+
+# raw experiment data: kept byte-identical (sample_data uses CRLF)
+*.csv  -text
+*.list -text
+
+# binary files
+*.mat binary
+*.jpg binary
+*.png binary
+*.pdf binary

@@ -78,11 +78,11 @@ for part = 1:N_part
     perm = allpair(mi, :);
     p.vz = p.vz(perm);
     p.zs = p.zs(:, perm);
-    save(sprintf('./%s/p_part%d-%d_topic%d', savedir, part, N_part, topic), 'p', 'L', 'perm');
+    save(sprintf('./%s/p_part%d-%d_topic%d.mat', savedir, part, N_part, topic), 'p', 'L', 'perm');
     csvwrite(sprintf('./%s/Akq_part%d-%d_topic%d.csv', savedir, part, N_part, topic), cell2mat(p.vz));
     cor_task_part = pdist([normalize(giventask); cell2mat(p.vz)'], 'cosine');
     cor_task_part = 1 - squareform(cor_task_part);
     cor_part{part} = diag(cor_task_part(1:size(giventask, 1), end-topic+1:end))';%row:given task, col: learned aspects
 end
-save(sprintf('./%s/cor-%d_topic%d', savedir, N_part, topic), 'cor_part');
+save(sprintf('./%s/cor-%d_topic%d.mat', savedir, N_part, topic), 'cor_part');
 toc

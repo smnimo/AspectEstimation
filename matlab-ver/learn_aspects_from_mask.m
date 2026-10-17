@@ -67,7 +67,7 @@ for s = 1 : S
         seglabel{s} = l;
     end
 end
-save('segsessions', 'segsession', 'session_all', 'seglabel', 'seqmask', 'win_size', 'thr');
+save('segsessions.mat', 'segsession', 'session_all', 'seglabel', 'seqmask', 'win_size', 'thr');
 
 %% time points without AOF are not observations
 for s = 1 : S

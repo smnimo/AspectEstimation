@@ -19,4 +19,4 @@ fprintf('topic : %d\n', topic);
 end
 
 %%
-save(sprintf('./%s/cor', loaddir), 'cor', 'cortop', 'cor_all', 'cortop_all');
+save(sprintf('./%s/cor.mat', loaddir), 'cor', 'cortop', 'cor_all', 'cortop_all');

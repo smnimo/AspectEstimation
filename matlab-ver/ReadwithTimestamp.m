@@ -53,4 +53,4 @@ end
 fclose(fid);
 
 Set_selected
-save('gazedata', 'session', 'semantic_attribute_seq', 'semantic_attributes', 'KB');
+save('gazedata.mat', 'session', 'semantic_attribute_seq', 'semantic_attributes', 'KB');
