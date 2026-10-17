@@ -6,7 +6,7 @@ Python port of `matlab-ver`, the code of
 > Catalog Browsing", *Journal of Eye Movement Research* 13(1):4.
 
 The MATLAB code is the reference. Step 1, step 2 and the evaluation reproduce the MATLAB outputs used for the paper
-(see [Verification](#verification)). Open tasks are in [TODO.md](TODO.md).
+(see [Verification](#verification)).
 
 ## Pipeline
 
@@ -18,7 +18,7 @@ The MATLAB code is the reference. Step 1, step 2 and the evaluation reproduce th
 | Step 2: pLSA on AOF masks ("spe") and on all values ("all") | `learn_aspects_from_mask.m`, `train.m`, `plsa.m` | `main.learn_aspects`, `main.train`, `src/models/plsa.py` |
 | Evaluation: aspect-task matching, cosine similarity, confusion matrix | `calc_matching.m`, `CalcEval.m`, `plot_conf_matrix.m` | `src/models/evaluation.py`, `main.py --eval` |
 | Evaluation of the detected AOF (All / Top / Comparison / LD) | `plot_eval_AoF.m` | `evaluation.aof_similarities`, `aof_ttests` |
-| Figures | `plot_*.m`, `disp_mask_for_paper.m`, `plot_aspect.R` | `src/visualization/plotter.py`, `main.py --plot` |
+| Figures | `plot_*.m`, `plot_mask.m`, `plot_aspect.R` | `src/visualization/plotter.py`, `main.py --plot` |
 
 Setting: 12 items (laptops, 3 x 4 grid) with 5 attributes (price, screen size, CPU score, memory capacity, weight) of 3 values each,
 3 tasks, 37 participants (111 sessions). Features are 15-dimensional (index = attribute * 3 + value - 1).
@@ -102,7 +102,7 @@ None of these change the paper's numbers (Table 2, Fig. 10) on the refs data.
 | `eval_aof.png` (`--mat`) | `plot_eval_AoF.m` | similarity of the detected AOF (All / Top / Comparison / LD) to the task |
 | `dur_usr.png` (`--mat`) | `plot_dur_usr.m` | session durations per participant |
 | `aof_temporal.png` | (2019 `for_rev2.m`, removed) | total number of AOF in each temporal position (paper Fig. 8, corrected; the paper's values came from an indexing bug) |
-| `mask_session{17,34,46}.png` | `plot_mask_for_paper.m`, `disp_mask_for_paper.m` | all values and AOF mask of one session |
+| `mask_session{17,34,46}.png` | `plot_mask.m` | all values and AOF mask of one session (session 17 = paper Fig. 7) |
 | `likelihood_convergence_{all,spe}.png` | - | log-likelihood over EM iterations |
 
 `plotter.plot_org_gaze` (`plot_org_gaze.m`) draws a raw gaze trajectory over the catalog screenshot.

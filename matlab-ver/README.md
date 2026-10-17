@@ -6,22 +6,16 @@ MATLAB code of
 > Browsing", *Journal of Eye Movement Research* 13(1):4. doi: 10.16910/jemr.13.1.4
 
 Step 1 ("MSET" in the code, AOF detection in the paper) detects attributes-of-focus by a likelihood-based short-term analysis;
-step 2 learns aspects and per-session interests with pLSA (the pIAF model). A Python port is in `../python-ver`.
+step 2 learns aspects and per-session interests with pLSA (the pIAF model).
 
-**Status:** the scripts used for the paper (kept in `../python-ver/refs`, not in git) were corrected for this release:
-the pipeline runs end to end, latent bugs were fixed, and paper Fig. 8, which was computed with an indexing bug, is now computed
-as described in the paper. The corrected scripts were checked against the paper-time outputs (through the Python port and by
-running them in GNU Octave); they have not been run in MATLAB. Changes are summarized in
-[Changes from the 2019 scripts](#changes-from-the-2019-scripts); open issues are in [TODO.md](TODO.md).
+**Status:** the scripts used for the paper (2019) were corrected for this release: the pipeline runs end to end and latent bugs
+were fixed. Changes are summarized in [Changes from the 2019 scripts](#changes-from-the-2019-scripts).
 
 ## Requirements
 
 - MATLAB with the Statistics and Machine Learning Toolbox (`pdist`, `squareform`, `ttest2`, `combnk`, `boxplot`).
   `train.m` uses `parfor` (Parallel Computing Toolbox; runs serially without it).
 - R with `corrplot` for `plot_aspect.R` (optional).
-- GNU Octave (>= 10, with the `statistics` package) also runs the scripts: start with `pkg load statistics` and
-  `save_default_options('-mat7-binary')` (MATLAB-compatible `.mat` files); `parfor` runs serially and `histogram`
-  (`plot_duration_segmentation_trialID.m`) is not available.
 
 ## Data layout
 
@@ -86,18 +80,18 @@ With the outputs used for the paper: 111 sessions (37 participants x 3 tasks), 4
 task estimation accuracy 83.8 % (Table 2), cosine similarity between tasks and matched aspects 0.82 / 0.86 / 0.86 with AOF detection
 and 0.61 / 0.69 / 0.58 without (Fig. 10).
 
-Erratum candidate: paper Fig. 8 ("total number of detected AOF in each temporal position", values 37, 20, 21, 31, 28, 30, 40, 36,
-36, 30) was computed with a linear index into the AOF masks. The number of AOF per segment of the 10 temporal segments is
-579, 779, 818, 878, 802, 962, 977, 919, 932, 791 (time points with AOF: 319, 360, 374, 380, 354, 390, 396, 377, 369, 325); the
-statement that comparison happens mainly in the latter part and decreases at the end still holds.
+Note on paper Fig. 8 ("total number of detected AOF in each temporal position", values 37, 20, 21, 31, 28, 30, 40, 36, 36, 30):
+the values were computed with a linear index into the AOF masks (`seqmask{s}(l)` instead of `seqmask{s}(:, l)`). The number of
+AOF in each of the 10 temporal segments is 579, 779, 818, 878, 802, 962, 977, 919, 932, 791 (time points with AOF: 319, 360,
+374, 380, 354, 390, 396, 377, 369, 325). The statement that comparison happens mainly in the latter part and decreases at the
+end still holds, and no other result depends on Fig. 8.
 
 ## Changes from the 2019 scripts
 
 The scripts used for the paper (2019) were corrected for this release (2026-10). With the paper's `gazedata.mat`, step 1
 (`lkh_win_5.mat`, AOF masks) is unchanged, and Table 2 / Fig. 10 do not change when evaluated on the paper's learned models.
 
-- Results that change: paper Fig. 8 (indexing bug, see above; its script was removed, the corrected count is computed by
-  `python-ver`, `main.py --plot`); `cortop` of `CalcEval.m` excludes sessions without
+- Results that change: paper Fig. 8 (indexing bug, see above; its script was removed); `cortop` of `CalcEval.m` excludes sessions without
   AOF (they used aspect 1); `plot_sim.m` error bars show the standard deviation (was the variance); the random restarts are
   seeded (`train.m`, `seed = 0`), so learned models differ from the paper's by random-restart variation.
 - Gaze reading (`LoadGaze.m`, `plot_org_gaze.m`): a missing left eye is filled from the right eye (such samples were dropped);
@@ -110,7 +104,7 @@ The scripts used for the paper (2019) were corrected for this release (2026-10).
   `../functions`; `save` always writes `.mat` files; `exact_prob.m` raises errors on invalid input.
 - Figures: `plot_aspect.R` reads the `csvwrite` output and plots unscaled values (the 2019 CSVs held a copy x 2 for
   visibility), with `col.lim` for corrplot >= 0.90; `plot_sim.m` defines `topic` for its active figure (was an error);
-  `plot_mask.m` replaces three mask scripts; `plot_dur_usr.m` also runs in Octave; all files use LF.
+  `plot_mask.m` replaces three mask scripts; all files use LF.
 - Removed: supplementary and unused scripts that are not needed for the paper's results: `for_rev2.m` (Fig. 8 and reviewer
   plots), `learn_aspects_from_part.m` / `test_cor_p.m` (pLSA on temporal parts, reviewer response), `confirm_bias.m` (choice of
   thr), `LoadQuestionnair.m` (unrelated questionnaire), `multi_choose_prob.m`, `multinomial.m`, `HomogenousProduct.m` (unused).

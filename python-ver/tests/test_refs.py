@@ -201,7 +201,7 @@ def test_python_training_close_to_paper(step1):
 
     Bit-identical results are impossible (MATLAB parfor random streams) and the saved MATLAB p is not a
     fixed point (lim = 1e-4 stops early). Over 20 seeds Python gave 92-95 correct sessions (paper: 93) and
-    moved <= 2 sessions w.r.t. Table 2; acceptance criterion (TODO D6): <= 2 sessions moved.
+    moved <= 2 sessions w.r.t. Table 2; acceptance criterion: <= 2 sessions moved.
     """
     spe = SessionProcessor().remove_empty_columns(step1[1])
     params, _ = pipeline.train(spe, 3, 1e-4, 100, 1000, jobs=os.cpu_count() or 1, seed=0)

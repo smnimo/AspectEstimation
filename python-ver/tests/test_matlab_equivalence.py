@@ -107,7 +107,7 @@ def ml_load_gaze(data, matlab_bug=False):
     LoadGaze.m: returns [target, duration(100 ms)] after the 150 ms filter and merging
 
     matlab_bug=True reproduces LoadGaze.m exactly (a missing left eye is never filled, x == 1 / y == 1
-    leave the grid); the default is the fixed specification implemented in python-ver (TODO H1).
+    leave the grid); the default is the fixed specification implemented in python-ver.
     """
     ts, g = data[:, 0], data[:, 1:]
     x, y = g[:, [0, 2]].copy(), g[:, [1, 3]].copy()
@@ -254,7 +254,7 @@ def test_gaze_reader_matches_loadgaze():
 
 
 def test_gaze_missing_eye_and_edges():
-    """fixed handling of a missing eye (either side) and of coordinates equal to 1 (TODO H1)"""
+    """fixed handling of a missing eye (either side) and of coordinates equal to 1"""
     reader = GazeDataReader(base_path='.')
     #                 ts  rx    ry    lx    ly
     data = np.array([[0, 0.10, 0.10, 0.20, 0.20],   # both eyes          -> mean (0.15, 0.15) -> 1
