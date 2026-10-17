@@ -30,7 +30,7 @@ every value is shared by 4 of the 12 items. A *session* = one participant x one 
 
 | MATLAB (`matlab-ver/`) | Python (`python-ver/`) | State |
 |---|---|---|
-| `ReadwithTimestamp.m`, `LoadGaze.m` | `src/data/gaze_reader.py` `GazeDataReader.load_session_from_files` / `_process_session_data` | OK (verified on `sample_data`); `load_all_sessions` wrong, see T2 |
+| `ReadwithTimestamp.m`, `LoadGaze.m` | `src/data/gaze_reader.py` `GazeDataReader.load_all_sessions` / `process_session` / `_process_session_data`, `save_gazedata` (-> gazedata.mat), CLI `python src/data/gaze_reader.py` | OK, with intentional fixes (H1) |
 | `Set_selected.m` | - | not ported (T2) |
 | `calc_lkh.m`, `exact_prob.m`, `HomogenousProduct.m` | `main.calc_lkh`, `src/data/data_loader.py` `LikelihoodCalculator`, `src/utils/math_utils.py` | OK |
 | `calc_segments.m` | `src/models/segments.py` `SegmentCalculator.calc_segments` | OK |
@@ -66,10 +66,12 @@ every value is shared by 4 of the 12 items. A *session* = one participant x one 
 ```bash
 cd python-ver
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt   # numpy is not installed system-wide
-.venv/bin/python -m pytest tests -q          # MATLAB-equivalence tests (25 tests, ~5 s; test_refs.py is skipped without refs/)
+.venv/bin/python -m pytest tests -q          # MATLAB-equivalence tests (28 tests, ~6 s; refs tests are skipped without refs/)
 .venv/bin/python main.py --demo --train-num 5 --max-topics 3 --savedir /tmp/res   # smoke test, synthetic data
 .venv/bin/python main.py --mat refs/gazedata.mat --eval                           # real data (MATLAB defaults: 100 restarts, 5 topics), ~15 s
 .venv/bin/python main.py --eval-matlab refs/results                               # evaluate the MATLAB results of the paper
+.venv/bin/python src/data/gaze_reader.py --timestamp-list ../experiment/timestamp.list --knowledge ../knowledge/knowledge.csv --out gazedata.mat
+                                                                                  # raw gaze -> gazedata.mat (ReadwithTimestamp.m), then --mat
 ```
 
 - `tests/test_matlab_equivalence.py` contains line-by-line numpy re-implementations of `calc_lkh`, `calc_segments`, `plsa/estep/mstep`,
@@ -95,9 +97,19 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt   # numpy is 
 - Verified on `refs/` (real data, 111 sessions): `lkh_ses` (max diff 1e-17), `seqmask` and `session_all` (exact), 4 sessions without AOF;
   the MATLAB `p_spe_topic3` gives paper Table 2 and 93/111 = 83.8 %; `cor.mat` (CalcSim) is reproduced.
   Python training (seed 0): spe K=3 log-likelihood -13249.52 (MATLAB -13248.47), Table 2 except one task-2 session (accuracy 82.9 %).
-- `GazeDataReader.load_session_from_files` on the raw session of `refs/` equals `gazedata.mat` usr 2 / task 1 (`f`, `dur`).
+- `GazeDataReader.load_session_from_files` on the raw session of `refs/` equals `gazedata.mat` usr 2 / task 1 (`f`, `dur`) before the H1 fix;
+  `test_loadgaze_reference_matches_matlab_output` keeps this as a check of the MATLAB-exact reference `ml_load_gaze(matlab_bug=True)`.
+- T7: training verified (see below), acceptance criterion D6.
+- H1 fixed: a missing eye is filled from the other one in both directions (LoadGaze.m never fills a missing left eye and drops the sample);
+  x == 1 / y == 1 map to the last column / row (LoadGaze.m leaves the grid). On the raw session of `refs/` the item sequence `f` is unchanged
+  (56 items), only `dur` changes (total 359.5 -> 357.7 x 100 ms); `dur` is not used by the pipeline. Effect on the other 110 sessions unknown (no raw data).
+- `_process_session_data` raises on grid positions / item ids outside the knowledge base (was: silently filled with value 0).
+- T2 done: `load_all_sessions(timestamp_list, experiment_dir)` follows ReadwithTimestamp.m (4 lines per user, 4th skipped, task from the .list,
+  `{usr, task}` keys, `_process_session_data`); fake-data fallbacks (`_load_available_data_files`, `_create_sample_sessions`) removed;
+  `save_gazedata(data, path)` writes a gazedata.mat (n_usr x n_task cells + KB) readable by `main.py --mat`; `process_session` is a quiet wrapper.
+  Test: `test_load_all_sessions` (fake timestamp.list). `Set_selected.m` is still not ported (`selected` is not used by the main flow).
 
-## 6. Open tasks (suggested order: T2 (+ H1), then T3-T5)
+## 6. Open tasks (suggested order: T3-T5)
 
 ### T7. (DONE) Python vs MATLAB training - investigated, no bug found; acceptance criterion D6
 - Deterministic (`test_refs.py::test_em_from_matlab_p`): from MATLAB's `p_{spe,all}_topic3`, three E/M-steps of `FourLayerPLSA` equal a loop
@@ -109,7 +121,7 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt   # numpy is 
   all 82-84 (MATLAB 84); cosine within +-0.003 of MATLAB.
 - `test_refs.py::test_python_training_close_to_paper` uses the agreed criterion (D6) "<= 2 sessions moved vs Table 2, cosine within 0.01" (seed 0).
 
-### H1. `LoadGaze.m` drops samples with only the left eye missing (decision: FIX in Python)
+### H1. (DONE, see section 5) `LoadGaze.m` drops samples with only the left eye missing (decision: FIX in Python)
 - `x(x(:,1)==-1, 2) = x(x(:,1)==-1, 1)` runs after column 1 was filled, so it only touches rows where both eyes are -1; a missing *left* eye
   (column 2) is averaged as (x_R - 1)/2 < 0 and the sample becomes invalid. `gaze_reader.gaze_to_items` reproduces this (24 samples in `sample_data`).
 - Fix both directions; update `ml_load_gaze` / `test_gaze_reader_matches_loadgaze` to the fixed specification. The MATLAB-compatible result
@@ -137,7 +149,7 @@ Reference: `calc_matching.m`, `CalcEval.m`, `CalcSim.m`, `plot_conf_matrix.m`, `
 - Acceptance: unit tests with synthetic data where the true permutation is known; on real data the accuracy and cosines should be in the range of the paper
   (random restarts, so not exact). Needs the 111-session `gazedata.mat` (T6) or a user-provided result.
 
-### T2. `GazeDataReader.load_all_sessions` does not follow `ReadwithTimestamp.m` / `LoadGaze.m`
+### T2. (DONE, see section 5) `GazeDataReader.load_all_sessions` did not follow `ReadwithTimestamp.m` / `LoadGaze.m`
 Where: `src/data/gaze_reader.py`.
 - `load_all_sessions` -> `process_session` uses the raw ~60 Hz grid samples as `f` (no 150 ms filter, no merge of identical consecutive targets),
   takes the task from `task_id` instead of `floor(cont(1)/100)`, and `dur` is not the filtered duration. Should call `_process_session_data` (correct).
@@ -172,7 +184,8 @@ Where: `src/models/plsa.py` `train_multiple_runs`, `train_standard_plsa`; `FourL
   "Numerical results match MATLAB" is only true for the parts in the map above. The "4-layer" wording: `P(o|v)` is an identity mapping and does not change any computation.
 - `main_four_layer.py`, `test_four_layer.py`, `test_comprehensive_visualization.py` use random/mock data; `test_with_arguments.py` feeds the raw 5xT attribute
   sequence (not an AOF mask) to `fit`; `test_actual_data.py` / `test_likelihood_convergence.py` depend on `load_all_sessions` (T2). Fix or delete; they do not test MATLAB equivalence.
-- `gaze_reader.main_read_gaze_data` uses `GazeDataReader("../../..")` as base path.
+- (done) `gaze_reader.main_read_gaze_data` is now a CLI with explicit paths.
+- `test_actual_data.py` still calls the old `load_all_sessions()` without arguments (now a TypeError); it was already outside the test suite (D4).
 
 ### T6. (mostly DONE with `refs/`, see section 5 and T7) End-to-end verification against real MATLAB output
 - Only synthetic data (multi-session) and one real session (`sample_data/`, gaze -> AOF mask looks right: CPU-high and memory-large rows lit for task 1) were checked.

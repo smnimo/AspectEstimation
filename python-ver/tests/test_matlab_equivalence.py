@@ -28,6 +28,7 @@ from models.segments import SegmentCalculator, SessionProcessor  # noqa: E402
 from utils.math_utils import exact_prob, homogenous_product  # noqa: E402
 
 SAMPLE_DIR = os.path.abspath(os.path.join(ROOT, '..', 'sample_data'))
+REFS = os.path.join(ROOT, 'refs')
 WIN, THR = 5, 0.03
 
 
@@ -101,17 +102,25 @@ def ml_plsa(sessions, K, lim=1e-4, itr_max=1000, seed=1):
     return zs, vz, hist
 
 
-def ml_load_gaze(data):
-    """LoadGaze.m: returns [target, duration(100 ms)] after the 150 ms filter and merging"""
+def ml_load_gaze(data, matlab_bug=False):
+    """
+    LoadGaze.m: returns [target, duration(100 ms)] after the 150 ms filter and merging
+
+    matlab_bug=True reproduces LoadGaze.m exactly (a missing left eye is never filled, x == 1 / y == 1
+    leave the grid); the default is the fixed specification implemented in python-ver (TODO H1).
+    """
     ts, g = data[:, 0], data[:, 1:]
     x, y = g[:, [0, 2]].copy(), g[:, [1, 3]].copy()
     for v in (x, y):
         i = v[:, 0] == -1
         v[i, 0] = v[i, 1]
-        i = v[:, 0] == -1
+        i = (v[:, 0] if matlab_bug else v[:, 1]) == -1
         v[i, 1] = v[i, 0]
     x, y = x.mean(1), y.mean(1)
-    tgt = np.floor(y * 3) * 4 + np.floor(x * 4) + 1
+    if matlab_bug:
+        tgt = np.floor(y * 3) * 4 + np.floor(x * 4) + 1
+    else:
+        tgt = np.minimum(np.floor(y * 3), 2) * 4 + np.minimum(np.floor(x * 4), 3) + 1
     tgt[(x < 0) | (x > 1) | (y < 0) | (y > 1)] = -1
     ts = (ts - ts[0]) / 1000 / 100
     keep = tgt >= 0
@@ -242,6 +251,66 @@ def test_gaze_reader_matches_loadgaze():
     assert np.array_equal(session['f'], f)
     assert np.allclose(session['dur'], ref[:, 1])
     assert np.array_equal(session['semantic_attribute_seq'], kb[session['list'][f - 1] - 1, :].T)
+
+
+def test_gaze_missing_eye_and_edges():
+    """fixed handling of a missing eye (either side) and of coordinates equal to 1 (TODO H1)"""
+    reader = GazeDataReader(base_path='.')
+    #                 ts  rx    ry    lx    ly
+    data = np.array([[0, 0.10, 0.10, 0.20, 0.20],   # both eyes          -> mean (0.15, 0.15) -> 1
+                     [1, -1,   -1,   0.60, 0.60],   # right eye missing  -> (0.6, 0.6)       -> 7
+                     [2, 0.60, 0.90, -1,   -1],     # left eye missing   -> (0.6, 0.9)       -> 11 (MATLAB: dropped)
+                     [3, -1,   -1,   -1,   -1],     # both missing       -> invalid
+                     [4, 1.00, 1.00, 1.00, 1.00],   # corner x = y = 1   -> 12 (MATLAB: 17)
+                     [5, 1.00, 0.10, 1.00, 0.10]])  # right edge x = 1   -> 4 (MATLAB: 5)
+    assert reader.gaze_to_items(data).tolist() == [1, 7, 11, -1, 12, 4]
+
+
+@pytest.mark.skipif(not os.path.exists(os.path.join(REFS, 'gazedata.mat')), reason='refs/ not found')
+def test_loadgaze_reference_matches_matlab_output():
+    """ml_load_gaze(matlab_bug=True) reproduces gazedata.mat (usr 2, task 1) made by MATLAB from the same raw data"""
+    import scipy.io
+    session = scipy.io.loadmat(os.path.join(REFS, 'gazedata.mat'))['session'][1, 0]
+    ref = ml_load_gaze(np.loadtxt(os.path.join(SAMPLE_DIR, '170116024150092.csv'), delimiter=','), matlab_bug=True)
+    assert np.array_equal(ref[:, 0], np.asarray(session['f'][0, 0]).ravel())
+    assert np.allclose(ref[:, 1], np.asarray(session['dur'][0, 0]).ravel(), rtol=0, atol=1e-12)
+    assert np.array_equal(np.loadtxt(os.path.join(SAMPLE_DIR, '170116024150092.list'), dtype=int) % 100,
+                          np.asarray(session['list'][0, 0]).ravel())
+
+
+def test_load_all_sessions(tmp_path):
+    """ReadwithTimestamp.m loop: 4 lines per user, 4th skipped, task from the .list, {usr, task} keys"""
+    import shutil
+    csv = os.path.join(SAMPLE_DIR, '170116024150092.csv')
+    items = np.loadtxt(os.path.join(SAMPLE_DIR, '170116024150092.list'), dtype=int) % 100
+    order = [[2, 1, 3, None], [3, 2, 1, None]]  # tasks per user; None = 4th session (no files, must be skipped)
+    names = []
+    for u, tasks in enumerate(order):
+        for i, task in enumerate(tasks):
+            name = f'u{u + 1}s{i + 1}'
+            names.append(name)
+            if task is not None:
+                shutil.copy(csv, tmp_path / f'{name}.csv')
+                np.savetxt(tmp_path / f'{name}.list', items + task * 100, fmt='%d')
+    (tmp_path / 'timestamp.list').write_text('\n'.join(names) + '\n')
+
+    reader = GazeDataReader(base_path='.', knowledge_csv_path=os.path.join(SAMPLE_DIR, 'knowledge.csv'))
+    reader.load_knowledge_base()
+    data = reader.load_all_sessions(str(tmp_path / 'timestamp.list'))
+    assert data['n_usr'] == 2
+    assert sorted(data['session']) == [(u, t) for u in (1, 2) for t in (1, 2, 3)]
+    assert data['session'][(1, 2)]['name'] == 'u1s1' and data['session'][(2, 1)]['name'] == 'u2s3'
+    single = reader.load_session_from_files(csv, os.path.join(SAMPLE_DIR, '170116024150092.list'), 1, 1)
+    for s in data['session'].values():
+        assert np.array_equal(s['f'], single['f']) and np.allclose(s['dur'], single['dur'])
+        assert np.array_equal(s['list'], items)
+
+    out = tmp_path / 'gazedata.mat'
+    reader.save_gazedata(data, str(out))
+    attrs, seqs = pipeline.load_gazedata_mat(str(out))
+    ref_attrs, ref_seqs = pipeline.from_reader_sessions(data)  # column-major order
+    assert all(np.array_equal(a, b) for a, b in zip(seqs, ref_seqs)) and len(seqs) == 6
+    assert all(np.array_equal(a, b) for a, b in zip(attrs, ref_attrs))
 
 
 def test_pipeline_smoke(tmp_path):
