@@ -152,7 +152,7 @@ def plot_eval_aof(dists: Dict[str, np.ndarray]) -> plt.Figure:
 
 def plot_aof_temporal(n_aof: Sequence[float]) -> plt.Figure:
     """
-    Total number of AOF in each temporal position of the sessions (paper Fig. 8; for_rev2.m, corrected count)
+    Total number of AOF in each temporal position of the sessions (paper Fig. 8, corrected count)
 
     Args:
         n_aof: per segment (10 segments of each session), from evaluation.aof_temporal_counts

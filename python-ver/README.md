@@ -101,7 +101,7 @@ None of these change the paper's numbers (Table 2, Fig. 10) on the refs data.
 | `aspect_circles_{tag}_topicK.png` | `plot_aspect.R` | aspects as circles (paper Fig. 9; values not scaled) |
 | `eval_aof.png` (`--mat`) | `plot_eval_AoF.m` | similarity of the detected AOF (All / Top / Comparison / LD) to the task |
 | `dur_usr.png` (`--mat`) | `plot_dur_usr.m` | session durations per participant |
-| `aof_temporal.png` | `for_rev2.m` (corrected) | total number of AOF in each temporal position (paper Fig. 8; the paper's values came from an indexing bug) |
+| `aof_temporal.png` | (2019 `for_rev2.m`, removed) | total number of AOF in each temporal position (paper Fig. 8, corrected; the paper's values came from an indexing bug) |
 | `mask_session{17,34,46}.png` | `plot_mask_for_paper.m`, `disp_mask_for_paper.m` | all values and AOF mask of one session |
 | `likelihood_convergence_{all,spe}.png` | - | log-likelihood over EM iterations |
 

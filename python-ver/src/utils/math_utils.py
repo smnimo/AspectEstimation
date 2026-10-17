@@ -117,7 +117,7 @@ def homogenous_product(base: int, length: int) -> int:
     Calculate the number of ways to distribute 'length' identical items 
     into 'base' distinct groups (including empty groups)
     
-    This is equivalent to MATLAB's HomogenousProduct function
+    This is equivalent to HomogenousProduct.m of the 2019 MATLAB scripts
     
     Args:
         base: Number of distinct groups

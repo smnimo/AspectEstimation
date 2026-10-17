@@ -187,7 +187,7 @@ def test_multinomial_probs_matches_exact_prob():
 
 
 def test_homogenous_product_and_allpair_order():
-    assert homogenous_product(3, 5) == 21  # HomogenousProduct.m: nchoosek(n+m-1, m)
+    assert homogenous_product(3, 5) == 21  # 2019 HomogenousProduct.m: nchoosek(n+m-1, m)
     expected = np.array([[i, j, WIN - i - j] for i in range(WIN + 1) for j in range(WIN - i + 1)])
     assert np.array_equal(LikelihoodCalculator(WIN).generate_all_combinations(3), expected)
 

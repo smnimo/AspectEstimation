@@ -1,7 +1,6 @@
 %%% match the learned aspects with the given tasks (aspect k <-> task k) and reorder p.vz / p.zs
 %%% input: task_att.mat (make_task_att.m), results/p_{spe,all}_topicK.mat (learn_aspects_from_mask.m)
 %%% output: the same files (reordered, with the permutation 'perm') and results/Akq_{spe,all}_topicK.csv
-%%% (the matching of learn_aspects_from_part.m results is in learn_aspects_from_part.m)
 clear
 load task_att
 savedir = 'results'
