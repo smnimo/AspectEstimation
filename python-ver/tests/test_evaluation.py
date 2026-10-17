@@ -67,7 +67,7 @@ def ml_conf(zs, n_usr, n_task, noaof):
 
 
 def ml_for_rev2(seqmask, buggy=False):
-    """for_rev2.m (B-3, paper Fig. 8): fixed sum(seqmask{s}(:, l)); buggy=True: the 2019 seqmask{s}(l) (linear index)"""
+    """2019 for_rev2.m (B-3, paper Fig. 8; removed): corrected sum(seqmask{s}(:, l)); buggy=True: seqmask{s}(l) (linear index)"""
     maskhist = np.zeros(10)
     for m in seqmask:
         L = m.shape[1]

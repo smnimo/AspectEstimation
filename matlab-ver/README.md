@@ -11,7 +11,7 @@ step 2 learns aspects and per-session interests with pLSA (the pIAF model). A Py
 **Status:** the scripts used for the paper (kept in `../python-ver/refs`, not in git) were corrected for this release:
 the pipeline runs end to end, latent bugs were fixed, and paper Fig. 8, which was computed with an indexing bug, is now computed
 as described in the paper. The corrected scripts were checked against the paper-time outputs (through the Python port and by
-running them in GNU Octave); a run in MATLAB is still pending. Changes are summarized in
+running them in GNU Octave); they have not been run in MATLAB. Changes are summarized in
 [Changes from the 2019 scripts](#changes-from-the-2019-scripts); open issues are in [TODO.md](TODO.md).
 
 ## Requirements
@@ -76,12 +76,9 @@ Processing details:
 | `plot_sim_task_asp.m`, `plot_sim.m` | cosine similarity between tasks and matched aspects (paper Fig. 10); `plot_sim.m` error bars = std |
 | `plot_mask.m` | function: all values and AOF of given sessions from `segsessions.mat` (`plot_mask(17)` = paper Fig. 7) |
 | `plot_org_gaze.m` | gaze trajectory over the screenshot (paper Fig. 6) |
-| `for_rev2.m` | number of AOF per temporal position (paper Fig. 8, corrected), durations and number of items per task |
 | `plot_eval_AoF.m` | similarity of AOF detected by All / Top / Comparison / LD to the task, t-tests -> `distances.mat` |
 | `plot_dur_usr.m`, `plot_duration_segmentation_trialID.m` | session durations, number of browsed items, AOF statistics (need `session_id`) |
-| `learn_aspects_from_part.m`, `test_cor_p.m` | pLSA on 10 temporal parts of the sessions (without AOF), matching, comparison |
-| `confirm_bias.m` | p-values of the multinomial window counts (choice of thr) |
-| `LoadQuestionnair.m`, `multi_choose_prob.m`, `multinomial.m`, `HomogenousProduct.m`, `pathfunc.m` | not used by the pipeline |
+| `pathfunc.m` | adds `matlab-ver` to the path (used by `plot_duration_segmentation_trialID.m`) |
 
 ## Results of the paper
 
@@ -99,7 +96,8 @@ statement that comparison happens mainly in the latter part and decreases at the
 The scripts used for the paper (2019) were corrected for this release (2026-10). With the paper's `gazedata.mat`, step 1
 (`lkh_win_5.mat`, AOF masks) is unchanged, and Table 2 / Fig. 10 do not change when evaluated on the paper's learned models.
 
-- Results that change: paper Fig. 8 (indexing bug in `for_rev2.m`, see above); `cortop` of `CalcEval.m` excludes sessions without
+- Results that change: paper Fig. 8 (indexing bug, see above; its script was removed, the corrected count is computed by
+  `python-ver`, `main.py --plot`); `cortop` of `CalcEval.m` excludes sessions without
   AOF (they used aspect 1); `plot_sim.m` error bars show the standard deviation (was the variance); the random restarts are
   seeded (`train.m`, `seed = 0`), so learned models differ from the paper's by random-restart variation.
 - Gaze reading (`LoadGaze.m`, `plot_org_gaze.m`): a missing left eye is filled from the right eye (such samples were dropped);
@@ -112,6 +110,9 @@ The scripts used for the paper (2019) were corrected for this release (2026-10).
   `../functions`; `save` always writes `.mat` files; `exact_prob.m` raises errors on invalid input.
 - Figures: `plot_aspect.R` reads the `csvwrite` output and plots unscaled values (the 2019 CSVs held a copy x 2 for
   visibility), with `col.lim` for corrplot >= 0.90; `plot_sim.m` defines `topic` for its active figure (was an error);
-  `plot_mask.m` replaces three mask scripts; `plot_dur_usr.m` / `test_cor_p.m` also run in Octave; all files use LF.
+  `plot_mask.m` replaces three mask scripts; `plot_dur_usr.m` also runs in Octave; all files use LF.
+- Removed: supplementary and unused scripts that are not needed for the paper's results: `for_rev2.m` (Fig. 8 and reviewer
+  plots), `learn_aspects_from_part.m` / `test_cor_p.m` (pLSA on temporal parts, reviewer response), `confirm_bias.m` (choice of
+  thr), `LoadQuestionnair.m` (unrelated questionnaire), `multi_choose_prob.m`, `multinomial.m`, `HomogenousProduct.m` (unused).
 
 Details of every change are in the commit history and pull requests #2 and #3.

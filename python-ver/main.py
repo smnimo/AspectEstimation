@@ -233,7 +233,7 @@ def save_figures(ev: Dict, giventask: np.ndarray, histories: Dict[str, Dict[int,
                  session_all: List[np.ndarray] = None, seqmask: List[np.ndarray] = None) -> List[str]:
     """
     Figures of plot_L_topic.m, plot_conf_matrix.m, plot_sim.m, plot_sim_task_asp.m, plot_aspect.R and,
-    with session data, plot_eval_AoF.m, plot_dur_usr.m, for_rev2.m (Fig. 8), plot_mask_for_paper.m (sessions 17, 34, 46)
+    with session data, plot_eval_AoF.m, plot_dur_usr.m, paper Fig. 8 (corrected count), plot_mask_for_paper.m (sessions 17, 34, 46)
 
     Args:
         ev: output of evaluation.evaluate (matched aspects)
