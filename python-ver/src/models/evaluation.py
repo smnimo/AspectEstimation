@@ -69,12 +69,10 @@ def match_aspects(vz: np.ndarray, zs: np.ndarray,
     Reorder the aspects so that aspect k corresponds to task k (calc_matching.m)
 
     The permutation maximizes the sum of the cosine similarities between task k and aspect k
-    over the first min(n_task, K) aspects. Permutations are visited in the order of MATLAB's
-    perms(1:K) (reverse lexicographic) and the first maximum is taken, so ties among the
-    unmatched aspects (K > n_task) are broken as in MATLAB.
-
-    Note: as in MATLAB, applying this twice is not idempotent for K > n_task + 1
-    (the unmatched aspects are reversed again).
+    over the first min(n_task, K) aspects. Permutations are visited in lexicographic order
+    (sortrows(perms(1:K)) in the fixed calc_matching.m) and the first maximum is taken, so an
+    already matched result keeps its order (idempotent). The 2019 calc_matching.m used perms order
+    (reverse lexicographic), which differs only in ties among the unmatched aspects (K > n_task).
 
     Returns:
         (vz, zs, perm): permuted vz (N x K), zs (S x K), and perm (0-based)
@@ -83,7 +81,7 @@ def match_aspects(vz: np.ndarray, zs: np.ndarray,
     cos = cosine_task_aspect(giventask, vz)
     k = min(giventask.shape[0], K)
     best, best_score = None, -np.inf
-    for perm in reversed(list(itertools.permutations(range(K)))):
+    for perm in itertools.permutations(range(K)):  # lexicographic
         score = np.sum(np.diag(cos[:, list(perm)])[:k])
         if score > best_score:
             best, best_score = np.array(perm), score
@@ -91,28 +89,33 @@ def match_aspects(vz: np.ndarray, zs: np.ndarray,
 
 
 def calc_eval(vz: np.ndarray, zs: np.ndarray, tasks: np.ndarray,
-              giventask: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+              giventask: np.ndarray, no_aof: Optional[np.ndarray] = None) -> Tuple[np.ndarray, np.ndarray]:
     """
     Similarity between the task of each session and its top aspect (CalcEval.m)
 
     Args:
         vz: (N x K) aspects, zs: (S x K) interests, tasks: (S,) task of each session (1-based)
+        no_aof: (S,) bool, sessions without AOF (model 'spe'); their cortop is NaN as in the fixed CalcEval.m
+            (the 2019 CalcEval.m used aspect 1 of their uniform zs)
 
     Returns:
         (cor_task, cortop): cor_task (n_task x K), cortop (S,) = cor_task[task(s), argmax_r zs(s, r)]
-        (sessions without AOF have uniform zs and therefore use aspect 1, as in MATLAB)
     """
     cor_task = cosine_task_aspect(giventask, vz)
     cortop = cor_task[np.asarray(tasks) - 1, np.argmax(zs, axis=1)]
+    if no_aof is not None:
+        cortop = np.where(no_aof, np.nan, cortop)
     return cor_task, cortop
 
 
-def confusion_matrix(zs: np.ndarray, n_usr: int, n_task: int) -> Tuple[np.ndarray, float]:
+def confusion_matrix(zs: np.ndarray, n_usr: int, n_task: int,
+                     no_aof: Optional[np.ndarray] = None) -> Tuple[np.ndarray, float]:
     """
     Task estimation by argmax zs (plot_conf_matrix.m)
 
-    A session whose maximum of zs equals 1/n_task exactly (uniform zs, i.e., a session
-    without AOF) is counted in the last column ("no comparison"), as in MATLAB.
+    Sessions without AOF are counted in the last column ("no comparison"): given by no_aof (fixed
+    plot_conf_matrix.m), or, if no_aof is None, detected by max zs == 1/n_task exactly (their zs is
+    uniform; rule of the 2019 plot_conf_matrix.m). Both agree on the paper data.
 
     Returns:
         (conf, accuracy): conf (n_task x n_task+1) counts, accuracy = trace / number of sessions
@@ -121,7 +124,10 @@ def confusion_matrix(zs: np.ndarray, n_usr: int, n_task: int) -> Tuple[np.ndarra
     for task in range(n_task):
         z = zs[task * n_usr:(task + 1) * n_usr]
         est = np.argmax(z, axis=1)
-        est[np.max(z, axis=1) == 1 / n_task] = n_task
+        if no_aof is None:
+            est[np.max(z, axis=1) == 1 / n_task] = n_task
+        else:
+            est[np.asarray(no_aof)[task * n_usr:(task + 1) * n_usr]] = n_task
         conf[task] = np.bincount(est, minlength=n_task + 1)
     return conf, np.trace(conf[:, :n_task]) / conf.sum()
 
@@ -134,7 +140,7 @@ def session_tasks(n_sessions: int, n_task: int) -> np.ndarray:
 
 
 def evaluate(models: Dict[str, Dict[int, Tuple[np.ndarray, np.ndarray]]],
-             giventask: np.ndarray, conf_topic: int = 3) -> Dict:
+             giventask: np.ndarray, conf_topic: int = 3, no_aof: Optional[np.ndarray] = None) -> Dict:
     """
     Matching + similarity + confusion matrix for all learned models (calc_matching -> CalcSim -> plot_conf_matrix)
 
@@ -142,12 +148,18 @@ def evaluate(models: Dict[str, Dict[int, Tuple[np.ndarray, np.ndarray]]],
         models: models[tag][K] = (vz (N x K), zs (S x K)), tag in {'spe', 'all'}
         giventask: (n_task x N)
         conf_topic: number of aspects used for the confusion matrix (MATLAB: 3)
+        no_aof: (S,) bool, sessions without AOF; used for the 'spe' models (cortop NaN, "no comparison").
+            If None, they are detected by their uniform zs in a 'spe' model with K >= 2 (same sessions on the
+            paper data; with K = 1 every zs is 1).
 
     Returns:
         out[tag][K] = {'vz', 'zs', 'perm', 'cor_task', 'cortop'} (matched),
         plus 'conf' and 'accuracy' for K == conf_topic
     """
     n_task = giventask.shape[0]
+    if no_aof is None and any(K >= 2 for K in models.get('spe', {})):
+        K = min(k for k in models['spe'] if k >= 2)
+        no_aof = np.all(np.isclose(models['spe'][K][1], 1 / K, rtol=0, atol=1e-15), axis=1)
     out = {}
     for tag, by_topic in models.items():
         out[tag] = {}
@@ -158,10 +170,12 @@ def evaluate(models: Dict[str, Dict[int, Tuple[np.ndarray, np.ndarray]]],
                 vz, zs, perm = match_aspects(vz, zs, giventask)
             else:
                 perm = np.arange(K)
-            cor_task, cortop = calc_eval(vz, zs, tasks, giventask)
+            skip = no_aof if tag == 'spe' else None  # 'all': every session has observations
+            cor_task, cortop = calc_eval(vz, zs, tasks, giventask, skip)
             res = {'vz': vz, 'zs': zs, 'perm': perm, 'cor_task': cor_task, 'cortop': cortop}
             if K == conf_topic:
-                res['conf'], res['accuracy'] = confusion_matrix(zs, S // n_task, n_task)
+                res['conf'], res['accuracy'] = confusion_matrix(
+                    zs, S // n_task, n_task, skip if skip is not None else np.zeros(S, dtype=bool))
             out[tag][K] = res
     return out
 
@@ -174,7 +188,7 @@ def format_summary(evaluation: Dict, n_task: int = 3) -> List[str]:
             k = min(n_task, K)
             lines.append(f"[{tag}] topic {K}: cos(task k, aspect k) = "
                          f"{np.round(np.diag(r['cor_task'])[:k], 3).tolist()}, "
-                         f"mean cortop = {np.mean(r['cortop']):.3f}")
+                         f"mean cortop = {np.nanmean(r['cortop']):.3f}")
             if 'conf' in r:
                 lines.append(f"[{tag}] topic {K}: accuracy = {r['accuracy']:.3f}, confusion matrix "
                              f"(rows: task, last column: no comparison) =\n{r['conf']}")
@@ -231,7 +245,7 @@ def aof_ttests(dists: Dict[str, np.ndarray]) -> Tuple[List[str], np.ndarray]:
     """
     Two-sample t-tests between the detectors (plot_eval_AoF.m, ttest2 with equal variances)
 
-    Sessions with NaN 'cos_dist_mset' (no AOF) are excluded from all detectors, as in MATLAB.
+    Sessions with NaN 'cos_dist_mset' (no AOF) are excluded from all detectors, as in plot_eval_AoF.m.
 
     Returns:
         (names, p): names = ['cos_dist_c', 'cos_dist_top', 'cos_dist_all', 'cos_dist_mset'] (MATLAB datas order),
@@ -239,9 +253,34 @@ def aof_ttests(dists: Dict[str, np.ndarray]) -> Tuple[List[str], np.ndarray]:
     """
     from scipy.stats import ttest_ind
     names = ['cos_dist_c', 'cos_dist_top', 'cos_dist_all', 'cos_dist_mset']
-    keep = dists['cos_dist_mset'] >= 0
+    keep = ~np.isnan(dists['cos_dist_mset'])
     data = [dists[n][keep] for n in names]
     p = np.zeros((4, 4))
     for i, j in itertools.combinations(range(4), 2):
         p[i, j] = ttest_ind(data[i], data[j]).pvalue
     return names, p
+
+
+def aof_temporal_counts(seqmask: List[np.ndarray], n_segments: int = 10) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    AOF per temporal position in the session (paper Fig. 8; for_rev2.m, corrected)
+
+    Time point l (1-based) of a session with T time points falls into segment floor((l - 1) * n_segments / T).
+
+    Args:
+        seqmask: AOF masks (features x T) of all sessions, with the time points without AOF (calc_segments output)
+
+    Returns:
+        (n_aof, n_points): per segment, the total number of AOF (sum of the masks, as the fixed for_rev2.m) and the
+        number of time points with at least one AOF. The 2019 for_rev2.m summed seqmask{s}(l), a linear index into
+        the mask, which gives the values shown in the paper ([37 20 21 31 28 30 40 36 36 30] on refs).
+    """
+    n_aof = np.zeros(n_segments)
+    n_points = np.zeros(n_segments)
+    for mask in seqmask:
+        T = mask.shape[1]
+        segment = (np.arange(T) * n_segments) // T
+        per_time = np.sum(mask, axis=0)
+        np.add.at(n_aof, segment, per_time)
+        np.add.at(n_points, segment, per_time > 0)
+    return n_aof, n_points

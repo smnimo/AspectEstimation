@@ -54,15 +54,12 @@ class SegmentCalculator:
         seglabel = []
         seqmask = []
         
-        # Attribute value ranges: maximum over all sessions.
-        # calc_segments.m:8 uses session 1 only, which gives fewer rows if session 1 never shows a value;
-        # both agree on the paper data (session 1 shows every value), see TODO.md.
-        sequences = [seq for seq in semantic_attribute_seq if seq.size > 0]
-        if not sequences:
-            raise ValueError("no non-empty attribute sequence")
-        all_sequences = np.concatenate(sequences, axis=1)
-        N_value = np.max(all_sequences, axis=1)
-        N_att = all_sequences.shape[0]
+        # Attribute value ranges from the catalogs of all sessions, as calc_lkh.m and the fixed calc_segments.m
+        # (the 2019 calc_segments.m used the browsed values of session 1; identical on the paper data)
+        if S == 0:
+            raise ValueError("no session")
+        N_value = np.max(np.vstack(semantic_attributes), axis=0)
+        N_att = len(N_value)
             
         attrange = []
         for n in range(N_att):
@@ -104,7 +101,8 @@ class SegmentCalculator:
                                                  bins=len(prob_att[att]),
                                                  range=(1, len(prob_att[att]) + 1))[0]
                         normalized_hist = normalize(hist_counts.astype(float))
-                        valflag = (normalized_hist >= prob_att[att])
+                        # paper: x / l > phi (calc_segments.m used >=; identical when phi = 1/3)
+                        valflag = (normalized_hist > prob_att[att])
                         
                         for v_idx, v in enumerate(attrange[att]):
                             if v_idx < len(valflag) and valflag[v_idx]:
@@ -189,40 +187,23 @@ class SessionProcessor:
             List of session matrices with unified vocabulary space
             
         Note:
-            Translated from the session_all creation in learn_aspects_from_mask.m
-            Each attribute type gets mapped to a different value range to avoid overlap:
-            - Attribute 1: values 1-N_value[0] → positions 1 to N_value[0]
-            - Attribute 2: values 1-N_value[1] → positions N_value[0]+1 to N_value[0]+N_value[1]
-            - etc.
+            Translated from the session_all creation in learn_aspects_from_mask.m:
+            value v of attribute a -> feature sum(N_value[:a]) + v (1-based), i.e. offsets cumsum(N_value)
+            (the 2019 script hard-coded +3, +6, +9, +12 for 5 attributes x 3 values)
         """
-        S = len(semantic_attribute_seq)
+        N_value = np.asarray(N_value, dtype=int)
+        offset = np.concatenate([[0], np.cumsum(N_value)[:-1]])
+        vocab_size = int(np.sum(N_value))
         session_all = []
-        
-        for s in range(S):
-            tmp = semantic_attribute_seq[s].copy()  # (attributes x timepoints)
-            
-            # Apply offsets to each attribute type (following MATLAB code exactly)
-            if tmp.shape[0] >= 2:
-                tmp[1, :] = tmp[1, :] + 3   # attribute type 2: value range [4--6]
-            if tmp.shape[0] >= 3:
-                tmp[2, :] = tmp[2, :] + 6   # attribute type 3: value range [7--9]
-            if tmp.shape[0] >= 4:
-                tmp[3, :] = tmp[3, :] + 9   # attribute type 4: value range [10--12]
-            if tmp.shape[0] >= 5:
-                tmp[4, :] = tmp[4, :] + 12  # attribute type 5: value range [13--15]
-            
-            # Create binary matrix (one-hot encoding)
-            vocab_size = int(np.sum(N_value))
-            tmp2 = np.zeros((vocab_size, tmp.shape[1]))
-            
-            for t in range(tmp.shape[1]):
-                for attr_idx in range(tmp.shape[0]):
-                    attr_value = int(tmp[attr_idx, t])
-                    if 1 <= attr_value <= vocab_size:  # Valid attribute value (1-indexed)
-                        tmp2[attr_value - 1, t] = 1  # Convert to 0-indexed
-            
-            session_all.append(tmp2)
-        
+
+        for seq in semantic_attribute_seq:
+            seq = np.asarray(seq, dtype=int)  # (attributes x timepoints)
+            if seq.shape[0] != len(N_value) or np.any((seq < 1) | (seq > N_value[:, None])):
+                raise ValueError(f"attribute values outside 1..N_value = {N_value}")
+            onehot = np.zeros((vocab_size, seq.shape[1]))
+            onehot[seq + offset[:, None] - 1, np.arange(seq.shape[1])[None, :]] = 1
+            session_all.append(onehot)
+
         return session_all
     
     def remove_empty_columns(self, seqmask: List[np.ndarray]) -> List[np.ndarray]:

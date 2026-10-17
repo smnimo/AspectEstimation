@@ -63,7 +63,7 @@ def ml_calc_segments(attrs, seq, lkh, win=WIN, thr=THR):
             h = np.bincount(seq[att, t - win + 1:t + 1], minlength=4)[1:]
             h = h / h.sum()
             for v in range(3):
-                if h[v] >= p[v]:
+                if h[v] > p[v]:  # fixed calc_segments.m (paper); was >=
                     looked[v, t - win + 1:t + 1] = 1
         rows.append(looked)
     return np.vstack(rows)

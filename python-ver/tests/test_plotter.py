@@ -38,9 +38,9 @@ def test_plot_functions():
             plotter.plot_sim_task_asp(cor, cor * 0.8),
             plotter.plot_eval_aof(dists),
             plotter.plot_dur_usr(rng.random((37, 3)) * 100),
+            plotter.plot_aof_temporal(rng.random(10) * 100),
             plotter.plot_mask(mask, mask * (rng.random((15, 30)) < 0.5), 'session'),
             plotter.plot_aspect_circles(vz[3]),
-            plotter.plot_aspect_circles(vz[3], scale=2),
             plotter.plot_likelihood_convergence({1: [-3, -2], 2: [-4, -2, -1.9]})]
     gaze = np.loadtxt(os.path.join(SAMPLE_DIR, '170116024150092.csv'), delimiter=',')
     figs.append(plotter.plot_org_gaze(gaze, plt.imread(os.path.join(SAMPLE_DIR, '170116024150092.jpg'))))
@@ -55,10 +55,11 @@ def test_save_figures_demo(tmp_path):
     res = pipeline.learn_aspects(attrs, seqs, max_topics=3, train_num=2, max_itr=30, jobs=1, savedir=str(tmp_path))
     models = {tag: {K: (np.stack(r['params']['vz'], axis=1), r['params']['zs']) for K, r in res[tag].items()}
               for tag in ('spe', 'all')}
-    ev = pipeline.run_evaluation(models, evaluation.GIVENTASK, str(tmp_path))
+    ev = pipeline.run_evaluation(models, evaluation.GIVENTASK, str(tmp_path), seqmask=res['seqmask'])
     histories = {tag: {K: r['history'] for K, r in res[tag].items()} for tag in ('spe', 'all')}
     paths = pipeline.save_figures(ev, evaluation.GIVENTASK, histories, str(tmp_path / 'figures'),
                                   session_all=res['session_all'], seqmask=res['seqmask'])
     names = {os.path.basename(p) for p in paths}
-    assert {'L_topic.png', 'conf_spe.png', 'sim.png', 'sim_task_asp.png', 'mask_session17.png'} <= names
+    assert {'L_topic.png', 'conf_spe.png', 'sim.png', 'sim_task_asp.png', 'mask_session17.png', 'aof_temporal.png'} <= names
+    assert 'aof_temporal_n_aof' in np.load(tmp_path / 'evaluation.npz')
     assert all(os.path.getsize(p) > 0 for p in paths)

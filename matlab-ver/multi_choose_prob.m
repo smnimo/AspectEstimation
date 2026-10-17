@@ -4,18 +4,12 @@ function [ out ] = multi_choose_prob(prob, N_hist)
 %%% N_hist: histogram of each observation
 
 if length(prob) ~= length(N_hist)
-    disp('length of prob must be same as the length of N_hist')
-    return
+    error('length of prob must be same as the length of N_hist')
 end
 if max(N_hist)>1 || min(N_hist) < 0
-    disp('elements of N_hist must be {0, 1}')
-    return
+    error('elements of N_hist must be {0, 1}')
 end
-if sum(prob) ~= 1
-    prob_vec = normalize(prob);
-end    
-
-prob_vec = prob(:);
+prob_vec = prob(:); % used as given (not renormalized)
 x = N_hist(:);
 
 N = sum(N_hist);

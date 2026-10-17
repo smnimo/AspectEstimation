@@ -84,7 +84,7 @@ def test_seqmask_and_session_all_match_segsessions(step1):
 
 
 @pytest.mark.parametrize('tag', ['spe', 'all'])
-def test_calc_eval_matches_cor_mat(tag):
+def test_calc_eval_matches_cor_mat(step1, tag):
     """
     cor.mat (CalcSim.m) vs CalcEval on the saved p, without re-matching.
 
@@ -99,15 +99,22 @@ def test_calc_eval_matches_cor_mat(tag):
         own = evaluation.cosine_task_aspect(evaluation.GIVENTASK, vz)
         perm = [int(np.argmin(np.abs(own - ref[:, [j]]).sum(0))) for j in range(K)]
         assert sorted(perm) == list(range(K))
+        no_aof = np.array([not m.any() for m in step1[1]]) if tag == 'spe' else None
         cor_task, cortop = evaluation.calc_eval(vz[:, perm], zs[:, perm],
-                                                evaluation.session_tasks(zs.shape[0], 3), evaluation.GIVENTASK)
+                                                evaluation.session_tasks(zs.shape[0], 3), evaluation.GIVENTASK, no_aof)
         assert np.allclose(cor_task, ref, atol=1e-12)
-        assert np.allclose(cortop, cor[key.replace('cor', 'cortop')].ravel()[K - 1].ravel(), atol=1e-12)
+        # the 2019 CalcEval.m kept sessions without AOF (aspect 1); the fixed one gives NaN for them
+        ref_top = cor[key.replace('cor', 'cortop')].ravel()[K - 1].ravel()
+        keep = ~np.isnan(cortop)
+        assert np.allclose(cortop[keep], ref_top[keep], atol=1e-12)
+        assert (~keep).sum() == (TABLE2[:, -1].sum() if tag == 'spe' else 0)
 
 
-def test_saved_results_are_matched_and_reproduce_table2():
+def test_saved_results_are_matched_and_reproduce_table2(step1):
     models = pipeline.load_matlab_models(RESULTS)
-    ev = evaluation.evaluate(models, evaluation.GIVENTASK)
+    no_aof = np.array([not m.any() for m in step1[1]])
+    ev = evaluation.evaluate(models, evaluation.GIVENTASK, no_aof=no_aof)
+    assert np.array_equal(evaluation.evaluate(models, evaluation.GIVENTASK)['spe'][3]['conf'], TABLE2)
     for tag in ('spe', 'all'):
         for K in range(2, 6):
             k = min(3, K)
@@ -131,6 +138,16 @@ def test_aof_similarities_match_distances_mat(gazedata, step1):
     assert np.isnan(dists['cos_dist_mset']).sum() == TABLE2[:, -1].sum()  # sessions without AOF
     names, p = evaluation.aof_ttests(dists)
     assert p[names.index('cos_dist_top'), names.index('cos_dist_mset')] < 0.01
+
+
+def test_aof_temporal_counts_fig8(step1):
+    """paper Fig. 8: the 2019 for_rev2.m (linear index) gives the paper's values; the corrected count differs"""
+    import test_evaluation
+    masks = cell_list(scipy.io.loadmat(os.path.join(REFS, 'segsessions.mat'))['seqmask'])
+    assert np.array_equal(test_evaluation.ml_for_rev2(masks, buggy=True), [37, 20, 21, 31, 28, 30, 40, 36, 36, 30])
+    n_aof, n_points = evaluation.aof_temporal_counts(step1[1])
+    assert np.array_equal(n_aof, [579, 779, 818, 878, 802, 962, 977, 919, 932, 791])
+    assert np.array_equal(n_points, [319, 360, 374, 380, 354, 390, 396, 377, 369, 325])
 
 
 # ------------------------------------------------------------------ training (T7)

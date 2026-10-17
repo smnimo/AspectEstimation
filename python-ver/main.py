@@ -165,10 +165,6 @@ def learn_aspects(semantic_attributes: List[np.ndarray], semantic_attribute_seq:
     """Run the whole pipeline (main_mask.m: calc_lkh -> learn_aspects_from_mask)"""
     S = len(semantic_attribute_seq)
     lkh_ses, N_value = calc_lkh(semantic_attributes, semantic_attribute_seq, win_size)
-    if not np.all(N_value == 3):
-        # the offsets of session_all (+3, +6, ...) are fixed to 3 values per attribute, as in MATLAB
-        raise ValueError(f"3 values per attribute type are expected, got {N_value}")
-
     seglabel, seqmask = SegmentCalculator(win_size, thr).calc_segments(
         lkh_ses, semantic_attributes, semantic_attribute_seq, win_size, thr)
     processor = SessionProcessor()
@@ -202,14 +198,17 @@ def learn_aspects(semantic_attributes: List[np.ndarray], semantic_attribute_seq:
 
 # ---------------------------------------------------------------- evaluation
 def run_evaluation(models: Dict[str, Dict[int, Tuple[np.ndarray, np.ndarray]]],
-                   giventask: np.ndarray, savedir: str, aof: Dict[str, np.ndarray] = None) -> Dict:
+                   giventask: np.ndarray, savedir: str, aof: Dict[str, np.ndarray] = None,
+                   no_aof: np.ndarray = None, seqmask: List[np.ndarray] = None) -> Dict:
     """
     Evaluate models[tag][K] = (vz, zs) and save the matched results to savedir/evaluation.npz
 
     Unlike calc_matching.m, the training outputs (p_*_topicK) are not overwritten.
     aof (evaluation.aof_similarities, plot_eval_AoF.m) is printed and saved as well when given.
+    no_aof: sessions without AOF (see evaluation.evaluate); detected from the uniform zs if None.
+    seqmask: AOF masks; the AOF per temporal position (paper Fig. 8) is printed and saved when given.
     """
-    ev = evaluation.evaluate(models, giventask)
+    ev = evaluation.evaluate(models, giventask, no_aof=no_aof)
     for line in evaluation.format_summary(ev, giventask.shape[0]):
         print(line)
     arrays = {f'{tag}_topic{K}_{name}': value
@@ -217,10 +216,13 @@ def run_evaluation(models: Dict[str, Dict[int, Tuple[np.ndarray, np.ndarray]]],
     if aof is not None:
         names, p = evaluation.aof_ttests(aof)
         print("AOF detection, mean cosine similarity (sessions with AOF): " +
-              ", ".join(f"{n} = {np.nanmean(aof[n][aof['cos_dist_mset'] >= 0]):.3f}" for n in names))
+              ", ".join(f"{n} = {np.mean(aof[n][~np.isnan(aof['cos_dist_mset'])]):.3f}" for n in names))
         print(f"  t-test p-values (upper triangle, order {names}):\n{np.round(p, 4)}")
         arrays.update(aof)
         arrays['aof_ttest_p'] = p
+    if seqmask is not None:
+        arrays['aof_temporal_n_aof'], arrays['aof_temporal_n_points'] = evaluation.aof_temporal_counts(seqmask)
+        print(f"AOF per temporal position (10 segments, paper Fig. 8): {arrays['aof_temporal_n_aof'].astype(int).tolist()}")
     os.makedirs(savedir, exist_ok=True)
     np.savez(os.path.join(savedir, 'evaluation.npz'), **arrays)
     return ev
@@ -231,7 +233,7 @@ def save_figures(ev: Dict, giventask: np.ndarray, histories: Dict[str, Dict[int,
                  session_all: List[np.ndarray] = None, seqmask: List[np.ndarray] = None) -> List[str]:
     """
     Figures of plot_L_topic.m, plot_conf_matrix.m, plot_sim.m, plot_sim_task_asp.m, plot_aspect.R and,
-    with session data, plot_eval_AoF.m, plot_dur_usr.m, plot_mask_for_paper.m (sessions 17, 34, 46)
+    with session data, plot_eval_AoF.m, plot_dur_usr.m, for_rev2.m (Fig. 8), plot_mask_for_paper.m (sessions 17, 34, 46)
 
     Args:
         ev: output of evaluation.evaluate (matched aspects)
@@ -255,9 +257,8 @@ def save_figures(ev: Dict, giventask: np.ndarray, histories: Dict[str, Dict[int,
         figs[f'aspects_{tag}'] = plotter.plot_aspects({K: ev[tag][K]['vz'] for K in Ks}, giventask, name)
         figs[f'likelihood_convergence_{tag}'] = plotter.plot_likelihood_convergence(histories[tag], name)
         for K in Ks:
-            if K >= 2:  # refs/results/{spe,all}K.pdf (vz) and {spe,all}K_2.pdf (vz * 2)
+            if K >= 2:  # paper Fig. 9 (refs/results/{spe,all}K.pdf)
                 figs[f'aspect_circles_{tag}_topic{K}'] = plotter.plot_aspect_circles(ev[tag][K]['vz'])
-                figs[f'aspect_circles_{tag}_topic{K}_x2'] = plotter.plot_aspect_circles(ev[tag][K]['vz'], scale=2)
     if 3 in Ks:
         figs['conf_spe'] = plotter.plot_conf_matrix(ev['spe'][3]['conf'], 'Task estimation MSET: confusion matrix')
         figs['conf_all'] = plotter.plot_conf_matrix(ev['all'][3]['conf'], 'Task estimation w/o MSET: confusion matrix')
@@ -270,6 +271,8 @@ def save_figures(ev: Dict, giventask: np.ndarray, histories: Dict[str, Dict[int,
         for s in sessions:
             dur[s['usr'] - 1, s['session_id'] - 1] = s['totalduration']
         figs['dur_usr'] = plotter.plot_dur_usr(dur)
+    if seqmask is not None:
+        figs['aof_temporal'] = plotter.plot_aof_temporal(evaluation.aof_temporal_counts(seqmask)[0])
     if session_all is not None and seqmask is not None:
         for s in (17, 34, 46):  # MATLAB indices of plot_mask_for_paper.m
             if s <= len(seqmask):
@@ -354,7 +357,8 @@ def main():
             aof = evaluation.aof_similarities([s['f'] for s in sessions], attrs, results['session_all'],
                                               results['seqmask'], evaluation.session_tasks(len(seqs), giventask.shape[0]),
                                               giventask)
-        ev = run_evaluation(models, giventask, args.savedir, aof)
+        no_aof = np.array([not m.any() for m in results['seqmask']])
+        ev = run_evaluation(models, giventask, args.savedir, aof, no_aof, results['seqmask'])
         if args.plot:
             histories = {tag: {K: r['history'] for K, r in results[tag].items()} for tag in ('spe', 'all')}
             save_figures(ev, giventask, histories, figdir, aof, sessions, results['session_all'], results['seqmask'])

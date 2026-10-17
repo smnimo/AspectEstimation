@@ -1,4 +1,6 @@
-%%% learn aspects --> plot transition of interests
+%%% learn aspects from the attributes-of-focus (step 2 of the paper)
+%%% input: gazedata.mat, lkh_win_5.mat (calc_lkh.m)
+%%% output: segsessions.mat, results/p_{spe,all}_topicK.mat, results/Akq_{spe,all}_topicK.csv
 clear
 close all
 tic
@@ -9,11 +11,15 @@ load gazedata
 
 %% saveparam
 savedir = 'results';
+if ~exist(savedir, 'dir')
+    mkdir(savedir);
+end
 
 %% Parameter for Learn aspects
 train_num = 100;
 lim = 1e-4;
 itr_MAX = 1000;
+seed = 0; % random seed of the restarts (train.m); [] = not seeded (as for the paper)
 
 %% print param
 S = numel(lkh_ses);
@@ -25,28 +31,22 @@ for n = 1 : N_att
     attrange{n} = 1 : N_value(n); % attribute value range
 end
 
-%%
-try
-    load('segsessions')
-catch
+%% all attribute values (without the AOF step): one-hot (sum(N_value) x T)
+% feature index of attribute a and value v: sum(N_value(1:a-1)) + v
+offset = [0; cumsum(N_value(1:end-1))];
 session_all = cell(S, 1);
 for s = 1 : S
-    tmp = semantic_attribute_seq{s};
-    tmp(2, :) = tmp(2, :) + 3; % attribute type 2: value range [ 4 -- 6 ]
-    tmp(3, :) = tmp(3, :) + 6; % attribute type 3: value range [ 7 -- 9]
-    tmp(4, :) = tmp(4, :) + 9; % attribute type 4: value range [ 10 -- 12]
-    tmp(5, :) = tmp(5, :) + 12; % attribute type 4: value range [ 13 -- 15]
+    tmp = semantic_attribute_seq{s} + repmat(offset, 1, size(semantic_attribute_seq{s}, 2));
     tmp2 = zeros(sum(N_value), size(tmp, 2));
     for t = 1 : size(tmp2, 2)
         tmp2(tmp(:, t), t) = 1;
     end
-    session_all{s} = tmp2; % concatenate segments
+    session_all{s} = tmp2;
 end
 
-%% make segsession from mask
+%% AOF masks (always recomputed; a saved segsessions.mat is not reused)
 segsession = cell(S, 1);
 [ seglabel, seqmask ] = calc_segments(lkh_ses, semantic_attributes, semantic_attribute_seq, win_size, thr);
-mods = [];
 for s = 1 : S
     segsession{s} = [];
     if max(seglabel{s}) > 0 % if distinctive periods exist
@@ -58,24 +58,18 @@ for s = 1 : S
                 segsession{s} = [segsession{s}, tmp];
             else
                 seglabel{s}(seglabel{s}==n) = 0;
-                mods = [mods, s];
             end
         end
+        % renumber the remaining segments 1, 2, ... without gaps
+        l = seglabel{s};
+        [~, ~, ic] = unique(l(l > 0));
+        l(l > 0) = ic;
+        seglabel{s} = l;
     end
-end
-
-for s = 1 : length(mods)
-    l = seglabel{mods(s)};
-    for n = 1 : max(l)
-        if (nnz(l==n)==0) && (n < max(l))
-            l(l>n) = l(l>n)-1;
-            n = n - 1;
-        end
-    end
-    seglabel{mods(s)} = l;
 end
 save('segsessions', 'segsession', 'session_all', 'seglabel', 'seqmask', 'win_size', 'thr');
-end
+
+%% time points without AOF are not observations
 for s = 1 : S
     seqmask{s}(:, sum(seqmask{s})==0) = [];
 end
@@ -83,22 +77,16 @@ end
 for topic = 1:5
 fprintf('topic:%d\n', topic);
 %% from mask
-[p, L] = train(seqmask, topic, lim, train_num, itr_MAX); %learn aspects by em
-%figure
-%imagesc(cell2mat(p.vz)') % plot aspects '
-%colormap gray
+[p, L] = train(seqmask, topic, lim, train_num, itr_MAX, seed); %learn aspects by em
 % save
 save(sprintf('./%s/p_spe_topic%d.mat', savedir, topic), 'p', 'L');
 csvwrite(sprintf('./%s/Akq_spe_topic%d.csv', savedir, topic), cell2mat(p.vz));
 
 %% from all
-[p, L] = train(session_all, topic, lim, train_num, itr_MAX); % learn aspects by em
-%figure
-%imagesc(p.rz') % plot aspects'
-%colormap gray
+[p, L] = train(session_all, topic, lim, train_num, itr_MAX, seed); % learn aspects by em
 % save
 save(sprintf('./%s/p_all_topic%d.mat', savedir, topic), 'p', 'L');
-csvwrite(sprintf('./%s/Akq_all_topic%d.csv', savedir, topic), cell2mat(p.vz)); %'
+csvwrite(sprintf('./%s/Akq_all_topic%d.csv', savedir, topic), cell2mat(p.vz));
 
 end
 toc

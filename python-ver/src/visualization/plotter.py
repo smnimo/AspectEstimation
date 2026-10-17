@@ -90,8 +90,8 @@ def plot_sim(cor_spe: np.ndarray, cor_all: np.ndarray) -> plt.Figure:
     Correlation between the given tasks and the learned aspects (plot_sim.m, active figure, topic = 3)
 
     For each task, the best cosine similarity over the aspects; left: per task, right: mean with an
-    error bar of the variance (as in MATLAB, var, not std). The 'aspect to task' figure of plot_sim.m
-    is commented out in MATLAB and not drawn.
+    error bar of the standard deviation (the 2019 plot_sim.m used the variance). The 'aspect to task'
+    figure of plot_sim.m is commented out in MATLAB and not drawn.
 
     Args:
         cor_spe, cor_all: cor_task (n_task x K) of CalcEval for the models with / without MET
@@ -104,7 +104,7 @@ def plot_sim(cor_spe: np.ndarray, cor_all: np.ndarray) -> plt.Figure:
     ax1.set_ylim(0, 1)
     ax1.legend()
     ax2.bar(range(2), Y.mean(axis=1))
-    ax2.errorbar(range(2), Y.mean(axis=1), yerr=Y.var(axis=1, ddof=1), fmt='.', color='k')
+    ax2.errorbar(range(2), Y.mean(axis=1), yerr=Y.std(axis=1, ddof=1), fmt='.', color='k')
     ax2.set_xticks(range(2))
     ax2.set_xticklabels(['with MET', 'without MET'])
     ax2.set_title('mean of correlations')
@@ -138,7 +138,7 @@ def plot_eval_aof(dists: Dict[str, np.ndarray]) -> plt.Figure:
     Args:
         dists: output of evaluation.aof_similarities
     """
-    keep = dists['cos_dist_mset'] >= 0
+    keep = ~np.isnan(dists['cos_dist_mset'])
     data = [dists[k][keep] for k in ('cos_dist_all', 'cos_dist_top', 'cos_dist_c', 'cos_dist_mset')]
     fig, ax = plt.subplots(figsize=(6, 4))
     ax.boxplot(data)
@@ -146,6 +146,25 @@ def plot_eval_aof(dists: Dict[str, np.ndarray]) -> plt.Figure:
     ax.set_xticks(range(1, 5))
     ax.set_xticklabels(['All', 'Top', 'Comparison', 'LD'])
     ax.set_ylabel('Cosine similarity')
+    fig.tight_layout()
+    return fig
+
+
+def plot_aof_temporal(n_aof: Sequence[float]) -> plt.Figure:
+    """
+    Total number of AOF in each temporal position of the sessions (paper Fig. 8; for_rev2.m, corrected count)
+
+    Args:
+        n_aof: per segment (10 segments of each session), from evaluation.aof_temporal_counts
+    """
+    n = len(n_aof)
+    fig, ax = plt.subplots(figsize=(7, 3.5))
+    ax.plot(range(n), n_aof)
+    ax.set_xticks(range(n))
+    ax.set_xticklabels([f'~{(i + 1) * 100 // n}%' for i in range(n)])
+    ax.set_ylim(0, None)
+    ax.set_xlabel('Temporal position in the session')
+    ax.set_ylabel('The total number of AOF')
     fig.tight_layout()
     return fig
 
@@ -235,19 +254,19 @@ def plot_mask(session_all: np.ndarray, seqmask: np.ndarray, title: str = '') -> 
     return fig
 
 
-def plot_aspect_circles(vz: np.ndarray, scale: float = 1.0) -> plt.Figure:
+def plot_aspect_circles(vz: np.ndarray) -> plt.Figure:
     """
-    Aspects as a circle matrix (plot_aspect.R: corrplot(method = 'circle', col = red-white-blue))
+    Aspects as a circle matrix (plot_aspect.R: corrplot(method = 'circle', col = red-white-blue); paper Fig. 9)
 
     As corrplot with its default is.corr = TRUE: colors span [-1, 1] (non-negative values are white..blue),
     circle area is proportional to |value| on the same absolute scale, the color bar shows [min, max] (cl.lim).
-    refs/results/spe3.pdf shows vz (scale = 1); spe3_2.pdf shows vz * 2 (scale = 2), the second half of
-    the hand-edited Akq_*.csv files that plot_aspect.R reads.
+    The values are plotted as they are, as in the paper (Fig. 9 color bars 0..0.2 / 0..0.33 = max of vz,
+    refs/results/spe3.pdf). The vz * 2 of the hand-edited Akq_*.csv / *_2.pdf files (for visibility) is not used.
 
     Args:
         vz: (15 x K) aspects
     """
-    N = np.asarray(vz) * scale
+    N = np.asarray(vz, dtype=float)
     cmap = LinearSegmentedColormap.from_list('rwb', ['red', 'white', 'blue'], N=200)
     norm = plt.Normalize(-1, 1)
     rows, cols = N.shape

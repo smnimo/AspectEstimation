@@ -21,6 +21,8 @@ inc = -1e20;
 lkh_p = -1e20;
 itr = 1;
 
+% stops when the relative increase of the log-likelihood is <= train_lim (1e-4 in learn_aspects_from_mask.m);
+% the result is not necessarily converged, and lkhlog(end) belongs to the parameters before the last M-step
 while abs(inc/lkh_p) > train_lim && itr < itr_MAX
   %fprintf('itr = %d\n', itr);
   %E-step

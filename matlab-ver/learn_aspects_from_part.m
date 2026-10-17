@@ -1,7 +1,6 @@
 %%% learn aspects --> plot transition of interests
 clear
 close all
-addpath('../functions')
 tic
 %% load
 load gazedata
@@ -58,4 +57,32 @@ for part = 1 : N_part
     save(sprintf('./%s/p_part%d-%d_topic%d.mat', savedir, part, N_part, topic), 'p', 'L');
     csvwrite(sprintf('./%s/Akq_part%d-%d_topic%d.csv', savedir, part, N_part, topic), cell2mat(p.vz)); %'
 end
+
+%% match aspects with the given tasks (moved from calc_matching.m)
+load task_att
+cor_part = cell(N_part, 1);
+for part = 1:N_part
+    load(sprintf('./%s/p_part%d-%d_topic%d', savedir, part, N_part, topic));
+
+    allpair = sortrows(perms(1:topic)); % lexicographic order: an already matched p keeps its order (idempotent)
+
+    asp = cell2mat(p.vz);
+    corscore = zeros(size(allpair, 1), 1);
+    for i = 1 : size(allpair, 1)
+    cor_task = pdist([normalize(giventask, 2); asp(:, allpair(i, :))'], 'cosine');
+    cor_task = 1 - squareform(cor_task);
+    cor_task = cor_task(1:size(giventask, 1), end-topic+1:end);%row:given task, col: learned aspects
+    corscore(i) = sum(diag(cor_task));
+    end
+    [~, mi] = max(corscore); % first maximum
+    perm = allpair(mi, :);
+    p.vz = p.vz(perm);
+    p.zs = p.zs(:, perm);
+    save(sprintf('./%s/p_part%d-%d_topic%d', savedir, part, N_part, topic), 'p', 'L', 'perm');
+    csvwrite(sprintf('./%s/Akq_part%d-%d_topic%d.csv', savedir, part, N_part, topic), cell2mat(p.vz));
+    cor_task_part = pdist([normalize(giventask); cell2mat(p.vz)'], 'cosine');
+    cor_task_part = 1 - squareform(cor_task_part);
+    cor_part{part} = diag(cor_task_part(1:size(giventask, 1), end-topic+1:end))';%row:given task, col: learned aspects
+end
+save(sprintf('./%s/cor-%d_topic%d', savedir, N_part, topic), 'cor_part');
 toc

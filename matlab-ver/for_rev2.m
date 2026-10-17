@@ -1,7 +1,7 @@
 clear
 close all
 load segsessions
-load('/Users/simonisi/Dropbox/MATLAB/201909_Gaze/results/cor.mat')
+load gazedata
 d = zeros(37, 3)
 for i = 1 : 111
 d(i) = session{i}.totalduration
@@ -16,14 +16,17 @@ dci(i) = length(session{i}.f)/session{i}.totalduration;
 end
 maskhist = zeros(10, 1)
 for s = 1 : 111
-L = length(sum(seqmask{s}))
+L = size(seqmask{s}, 2)
 for l = 1 : L
-maskhist(floor((l-1) * 10 / L)+1) = maskhist(floor((l-1) * 10 / L)+1) + seqmask{s}(l);
+% number of AOF at time l (column l); the paper's Fig. 8 used seqmask{s}(l), a linear index into the
+% 15 x L mask (elements of the first columns), see TODO.md A1
+maskhist(floor((l-1) * 10 / L)+1) = maskhist(floor((l-1) * 10 / L)+1) + sum(seqmask{s}(:, l));
 end
 end
-% B-3
+% B-3 (paper Fig. 8)
 plot(maskhist)
-ylim([0, 50])
+ylabel('The total number of AOF')
+xlabel('Temporal position in the session (10 segments)')
 % B-4
 figure
 subplot(1, 2, 2)

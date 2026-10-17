@@ -5,18 +5,24 @@ gaze = data(:, 2:end);
 
 x = gaze(:, [1,3]);
 y = gaze(:, [2,4]);
-x(x(:, 1)==-1, 1) = x(x(:, 1)==-1, 2);
-x(x(:, 1)==-1, 2) = x(x(:, 1)==-1, 1);
+% a missing eye (-1) is filled from the other eye (columns: right, left);
+% the mask of column 2 is taken before filling column 1 (a missing left eye used to stay -1
+% and the sample was dropped as (x_R - 1) / 2 < 0)
+missing = x == -1;
+x(missing(:, 1), 1) = x(missing(:, 1), 2);
+x(missing(:, 2), 2) = x(missing(:, 2), 1);
 x = mean(x, 2);
 
-y(y(:, 1)==-1, 1) = y(y(:, 1)==-1, 2);
-y(y(:, 1)==-1, 2) = y(y(:, 1)==-1, 1);
+missing = y == -1;
+y(missing(:, 1), 1) = y(missing(:, 1), 2);
+y(missing(:, 2), 2) = y(missing(:, 2), 1);
 y = mean(y, 2);
 
 gaze_seq = [x, y];
 vN = 3;
 cN = 4;
-target_seq = floor(y * vN) * cN + floor(x * cN) + 1;
+% x == 1 / y == 1 are valid and belong to the last column / row
+target_seq = min(floor(y * vN), vN - 1) * cN + min(floor(x * cN), cN - 1) + 1;
 target_seq(x<0 | x>1 | y < 0 | y > 1) = -1;
 %%
 timestamp = timestamp - timestamp(1);

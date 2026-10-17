@@ -4,14 +4,9 @@ function [ out ] = exact_prob(prob, N_hist)
 %%% N_hist: histogram of each observation
 
 if length(prob) ~= length(N_hist)
-    disp('length of prob must be same as the length of N_hist')
-    return
+    error('length of prob must be same as the length of N_hist')
 end
-if sum(prob) ~= 1
-    prob_vec = normalize(prob);
-end    
-
-prob_vec = prob(:);
+prob_vec = prob(:); % used as given (not renormalized)
 x = N_hist(:);
 
 N = sum(N_hist);

@@ -84,8 +84,10 @@ results = main.learn_aspects(attrs, seqs, savedir='results')
   window likelihoods, AOF masks and `session_all` are identical; the MATLAB results give the paper's Table 2 (accuracy 83.8 %);
   Python training is accepted when at most 2 sessions differ from Table 2.
 
-Intentional differences from MATLAB (details in TODO.md): a missing left eye is filled from the right eye (`LoadGaze.m` drops such samples),
-gaze coordinates equal to 1 belong to the last grid column / row, invalid inputs raise errors instead of producing wrong values.
+Python follows the corrected matlab-ver (`../matlab-ver/TODO.md`); compared with the 2019 scripts used for the paper: a missing left eye
+is filled from the right eye, gaze coordinates equal to 1 belong to the last grid column / row, the AOF rule is `>` (paper),
+sessions without AOF are excluded from `cortop`, aspect matching keeps an already matched order, invalid inputs raise errors.
+None of these change the paper's numbers (Table 2, Fig. 10) on the refs data.
 
 ## Figures
 
@@ -96,9 +98,10 @@ gaze coordinates equal to 1 belong to the last grid column / row, invalid inputs
 | `L_topic.png`, `aspects_{all,spe}.png` | `plot_L_topic.m` | final log-likelihood vs number of aspects; learned aspects and the given tasks |
 | `conf_{spe,all}.png` | `plot_conf_matrix.m` | task estimation (3 aspects), last column = no comparison |
 | `sim.png`, `sim_task_asp.png` | `plot_sim.m`, `plot_sim_task_asp.m` | cosine similarity between tasks and aspects, with / without MET |
-| `aspect_circles_{tag}_topicK[_x2].png` | `plot_aspect.R` | aspects as circles (`_x2`: values x 2, as `refs/results/*_2.pdf`) |
+| `aspect_circles_{tag}_topicK.png` | `plot_aspect.R` | aspects as circles (paper Fig. 9; values not scaled) |
 | `eval_aof.png` (`--mat`) | `plot_eval_AoF.m` | similarity of the detected AOF (All / Top / Comparison / LD) to the task |
 | `dur_usr.png` (`--mat`) | `plot_dur_usr.m` | session durations per participant |
+| `aof_temporal.png` | `for_rev2.m` (corrected) | total number of AOF in each temporal position (paper Fig. 8; the paper's values came from an indexing bug) |
 | `mask_session{17,34,46}.png` | `plot_mask_for_paper.m`, `disp_mask_for_paper.m` | all values and AOF mask of one session |
 | `likelihood_convergence_{all,spe}.png` | - | log-likelihood over EM iterations |
 
