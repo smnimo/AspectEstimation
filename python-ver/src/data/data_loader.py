@@ -1,144 +1,17 @@
 """
-Data loading and processing utilities
-Translated from MATLAB data loading functions
+Window likelihoods of the browsed attribute values (calc_lkh.m)
+
+gazedata.mat is loaded by main.load_gazedata_mat; raw gaze data by data.gaze_reader.
 """
 
 import numpy as np
-import pandas as pd
-from typing import List, Dict, Tuple, Optional, Any
-import scipy.io
+from typing import List, Dict
 import os
 import sys
 
 # Add the parent directory to the path to import utils
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from utils.math_utils import exact_prob
-
-
-class GazeDataLoader:
-    """
-    Data loader for gaze tracking data
-    
-    Translated from LoadGaze.m and related MATLAB functions
-    """
-    
-    def __init__(self, data_dir: str = "../../"):
-        """
-        Initialize data loader
-        
-        Args:
-            data_dir: Directory containing the data files
-        """
-        self.data_dir = data_dir
-        self.semantic_attributes = None
-        self.semantic_attribute_seq = None
-        self.sessions_data = None
-        
-    def load_gazedata(self, filename: str = "gazedata.mat") -> Dict[str, Any]:
-        """
-        Load gaze data from MATLAB .mat file
-        
-        Args:
-            filename: Name of the .mat file to load
-            
-        Returns:
-            Dictionary containing loaded data
-            
-        Note:
-            Equivalent to 'load gazedata' in MATLAB
-        """
-        filepath = os.path.join(self.data_dir, filename)
-        
-        if not os.path.exists(filepath):
-            raise FileNotFoundError(f"Data file not found: {filepath}")
-            
-        try:
-            data = scipy.io.loadmat(filepath)
-            
-            # Extract relevant variables (adjust based on actual .mat file structure)
-            self.semantic_attributes = data.get('semantic_attributes', None)
-            self.semantic_attribute_seq = data.get('semantic_attribute_seq', None)
-            
-            return data
-            
-        except Exception as e:
-            raise RuntimeError(f"Error loading .mat file: {e}")
-    
-    def process_attributes(self) -> Tuple[np.ndarray, List[range]]:
-        """
-        Process semantic attributes to get value ranges
-        
-        Returns:
-            Tuple of (N_value array, attribute ranges)
-            
-        Note:
-            Translated from the attribute processing in calc_lkh.m
-        """
-        if self.semantic_attributes is None:
-            raise ValueError("Semantic attributes not loaded. Call load_gazedata() first.")
-        
-        # Convert cell array to matrix if needed
-        if isinstance(self.semantic_attributes, np.ndarray):
-            attr_matrix = self.semantic_attributes
-        else:
-            # Handle MATLAB cell array structure
-            attr_matrix = np.vstack([np.array(attr).flatten() for attr in self.semantic_attributes])
-        
-        N_value = np.max(attr_matrix, axis=0)
-        N_att = attr_matrix.shape[1]
-        
-        attrange = []
-        for n in range(N_att):
-            attrange.append(range(1, N_value[n] + 1))
-            
-        return N_value, attrange
-    
-    def calculate_attribute_probabilities(self, session_idx: int) -> List[np.ndarray]:
-        """
-        Calculate probability distribution for each attribute in a session
-        
-        Args:
-            session_idx: Index of the session
-            
-        Returns:
-            List of probability distributions for each attribute
-            
-        Note:
-            Translated from the prob_att calculation in calc_lkh.m
-        """
-        if self.semantic_attributes is None:
-            raise ValueError("Data not loaded. Call load_gazedata() first.")
-        
-        # Get attributes for the specific session
-        session_attrs = self.semantic_attributes[session_idx]
-        
-        # Handle different data formats
-        if session_attrs.ndim == 1:
-            # Single attribute case
-            n_attributes = 1
-            session_attrs = session_attrs.reshape(-1, 1)
-        else:
-            n_attributes = session_attrs.shape[1]
-        
-        # Calculate value ranges for this session
-        prob_att = []
-        for att_idx in range(n_attributes):
-            attr_values = session_attrs[:, att_idx]
-            
-            # Get unique values and their range
-            unique_vals = np.unique(attr_values)
-            min_val, max_val = int(np.min(unique_vals)), int(np.max(unique_vals))
-            
-            # Create histogram
-            hist_counts = np.histogram(attr_values, 
-                                     bins=max_val - min_val + 1,
-                                     range=(min_val - 0.5, max_val + 0.5))[0]
-            
-            # Convert to probability distribution
-            prob_dist = hist_counts / np.sum(hist_counts) if np.sum(hist_counts) > 0 else np.ones_like(hist_counts) / len(hist_counts)
-            prob_att.append(prob_dist)
-            
-        return prob_att
 
 
 class LikelihoodCalculator:
@@ -267,30 +140,3 @@ class LikelihoodCalculator:
             Exact probability value
         """
         return exact_prob(prob_dist, combination)
-
-
-def save_likelihood_results(likelihood_data: Dict, filename: str = "lkh_win_5.npz"):
-    """
-    Save likelihood results to file
-    
-    Args:
-        likelihood_data: Dictionary containing likelihood results
-        filename: Output filename
-        
-    Note:
-        Equivalent to save('lkh_win_5', 'lkh_ses') in MATLAB
-    """
-    np.savez(filename, **likelihood_data)
-
-
-def load_likelihood_results(filename: str = "lkh_win_5.npz") -> Dict:
-    """
-    Load likelihood results from file
-    
-    Args:
-        filename: Input filename
-        
-    Returns:
-        Dictionary containing likelihood results
-    """
-    return dict(np.load(filename, allow_pickle=True))

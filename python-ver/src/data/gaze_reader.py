@@ -4,15 +4,8 @@ Translates ReadwithTimestamp.m and LoadGaze.m functionality
 """
 
 import numpy as np
-import pandas as pd
 import os
-from typing import Dict, List, Any
-import sys
-import os
-
-# Add the parent directory to the path to import utils
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-from utils.math_utils import normalize
+from typing import Dict, Any
 
 
 class GazeDataReader:
@@ -90,32 +83,8 @@ class GazeDataReader:
                     print(f"Error loading {knowledge_path}: {e}")
                     continue
         
-        print(f"Warning: knowledge.csv not found in any expected location.")
-        print(f"Tried paths: {[os.path.abspath(p) for p in possible_paths]}")
-        print("Using sample knowledge base.")
-        # Create sample knowledge base (12 items × 5 attributes)
-        self.knowledge_base = self._create_sample_knowledge_base()
-        return self.knowledge_base
-    
-    def _create_sample_knowledge_base(self) -> np.ndarray:
-        """Create a sample knowledge base for testing"""
-        # Sample 12 items × 5 attributes with values 1-3
-        kb = np.array([
-            [2, 3, 3, 3, 2],
-            [2, 2, 3, 3, 3],
-            [1, 2, 2, 3, 3],
-            [1, 3, 1, 3, 1],
-            [3, 3, 3, 2, 3],
-            [3, 2, 2, 2, 2],
-            [3, 1, 1, 2, 3],
-            [2, 1, 1, 2, 1],
-            [3, 2, 3, 1, 1],
-            [1, 1, 2, 1, 2],
-            [2, 1, 2, 1, 1],
-            [1, 3, 1, 1, 2]
-        ])
-        print(f"Created sample knowledge base: {kb.shape}")
-        return kb
+        raise FileNotFoundError(
+            f"knowledge.csv not found; tried {[os.path.abspath(p) for p in possible_paths]}")
     
     def _convert_to_onehot(self, semantic_seq: np.ndarray) -> np.ndarray:
         """
@@ -162,19 +131,8 @@ class GazeDataReader:
         print(f"  LIST: {list_file}")
         print(f"  User: {user_id}, Task: {task_id}")
         
-        # Load gaze data
-        try:
-            gaze_data = self.load_gaze_data(csv_file)
-        except Exception as e:
-            print(f"Error loading gaze data: {e}")
-            return None
-            
-        # Load layout data
-        try:
-            layout_data = self.load_item_layout(list_file)
-        except Exception as e:
-            print(f"Error loading layout data: {e}")
-            return None
+        gaze_data = self.load_gaze_data(csv_file)
+        layout_data = self.load_item_layout(list_file)
             
         # Process the session
         session = self._process_session_data(gaze_data, layout_data, user_id, task_id)
@@ -473,52 +431,6 @@ class GazeDataReader:
             self.load_knowledge_base()
         layout = np.loadtxt(list_file, dtype=int)
         return self._process_session_data(np.loadtxt(csv_file, delimiter=','), layout, user_id, int(layout[0] // 100))
-    
-    def items_to_semantic_attributes(self, item_sequence: np.ndarray) -> np.ndarray:
-        """
-        Convert item sequence to semantic attribute sequence using knowledge base
-        Handles the actual item IDs from layout (e.g., 101, 103, etc.)
-        
-        Args:
-            item_sequence: Array of item indices or -1 for invalid
-            
-        Returns:
-            Semantic attribute sequence (features × time) using offset encoding
-        """
-        if self.knowledge_base is None:
-            raise ValueError("Knowledge base not loaded. Call load_knowledge_base() first.")
-        
-        n_items, n_attributes = self.knowledge_base.shape
-        n_values = np.max(self.knowledge_base, axis=0)
-        total_features = np.sum(n_values)
-        
-        # Calculate offsets for attribute encoding
-        offsets = [0]
-        for i in range(len(n_values) - 1):
-            offsets.append(offsets[-1] + n_values[i])
-        
-        # Create output matrix
-        n_timepoints = len(item_sequence)
-        semantic_seq = np.zeros((total_features, n_timepoints))
-        
-        for t in range(n_timepoints):
-            item_id = item_sequence[t]
-            if item_id > 0:  # Valid item (not -1)
-                # Extract knowledge base index (remove task prefix)
-                knowledge_idx = item_id % 100  # e.g., 101 -> 1, 103 -> 3
-                
-                if 1 <= knowledge_idx <= n_items:  # Valid knowledge index
-                    # Get attributes for this item (convert to 0-based)
-                    item_attrs = self.knowledge_base[knowledge_idx - 1, :]
-                    
-                    # Encode using offsets
-                    for attr in range(n_attributes):
-                        attr_value = item_attrs[attr]
-                        if attr_value > 0:  # Valid attribute value
-                            feature_idx = offsets[attr] + attr_value - 1  # Convert to 0-based
-                            semantic_seq[feature_idx, t] = 1
-        
-        return semantic_seq
     
     def load_all_sessions(self, timestamp_list: str, experiment_dir: str = None) -> Dict[str, Any]:
         """

@@ -16,8 +16,6 @@ Usage:
 """
 
 import argparse
-import contextlib
-import io
 import os
 import sys
 import time
@@ -110,10 +108,7 @@ def calc_lkh(semantic_attributes: List[np.ndarray], semantic_attribute_seq: List
 def _train_once(args):
     sessions, n_topics, lim, max_itr, seed = args
     np.random.seed(seed)
-    model = FourLayerPLSA(n_topics)
-    with contextlib.redirect_stdout(io.StringIO()):
-        params, history = model.fit(sessions, None, lim, max_itr)
-    return params, history
+    return FourLayerPLSA(n_topics).fit(sessions, lim, max_itr)
 
 
 def train(sessions: List[np.ndarray], n_topics: int, lim: float, train_num: int,
@@ -153,8 +148,7 @@ def learn_aspects(semantic_attributes: List[np.ndarray], semantic_attribute_seq:
     seglabel, seqmask = SegmentCalculator(win_size, thr).calc_segments(
         lkh_ses, semantic_attributes, semantic_attribute_seq, win_size, thr)
     processor = SessionProcessor()
-    with contextlib.redirect_stdout(io.StringIO()):
-        session_all = processor.create_session_all(semantic_attribute_seq, N_value)
+    session_all = processor.create_session_all(semantic_attribute_seq, N_value)
     session_spe = processor.remove_empty_columns(seqmask)
 
     n_aof = sum(m.shape[1] for m in session_spe)

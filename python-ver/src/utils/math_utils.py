@@ -4,7 +4,7 @@ Translated from MATLAB code
 """
 
 import numpy as np
-from typing import Union, Optional
+from typing import Optional
 
 
 def normalize(N: np.ndarray, dim: Optional[int] = None) -> np.ndarray:
@@ -131,32 +131,3 @@ def homogenous_product(base: int, length: int) -> int:
     """
     from math import comb
     return comb(length + base - 1, base - 1)
-
-
-def generate_all_pairs(win_size: int, n_categories: int = 3) -> np.ndarray:
-    """
-    Generate all possible combinations for a sliding window
-    
-    Args:
-        win_size: Window size
-        n_categories: Number of categories (default: 3)
-        
-    Returns:
-        Array of all possible combinations
-        
-    Note:
-        Translated from the allpair3 generation logic in calc_lkh.m
-    """
-    if n_categories == 3:
-        # For 3 categories, generate all combinations where i+j+k = win_size
-        combinations = []
-        for i in range(win_size + 1):
-            for j in range(win_size - i + 1):
-                k = win_size - i - j
-                combinations.append([i, j, k])
-        return np.array(combinations)
-    else:
-        # General case for n categories
-        from itertools import combinations_with_replacement
-        # This is more complex for general case - would need recursive generation
-        raise NotImplementedError("General case for n_categories > 3 not implemented yet")

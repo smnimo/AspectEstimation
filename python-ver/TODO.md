@@ -31,17 +31,16 @@ every value is shared by 4 of the 12 items. A *session* = one participant x one 
 | MATLAB (`matlab-ver/`) | Python (`python-ver/`) | State |
 |---|---|---|
 | `ReadwithTimestamp.m`, `LoadGaze.m` | `src/data/gaze_reader.py` `GazeDataReader.load_all_sessions` / `process_session` / `_process_session_data`, `save_gazedata` (-> gazedata.mat), CLI `python src/data/gaze_reader.py` | OK, with intentional fixes (H1) |
-| `Set_selected.m` | - | not ported (T2) |
+| `Set_selected.m` | - | not ported (not needed, see section 6) |
 | `calc_lkh.m`, `exact_prob.m`, `HomogenousProduct.m` | `main.calc_lkh`, `src/data/data_loader.py` `LikelihoodCalculator`, `src/utils/math_utils.py` | OK |
 | `calc_segments.m` | `src/models/segments.py` `SegmentCalculator.calc_segments` | OK |
 | `seqmask(:, sum==0) = []` | `SessionProcessor.remove_empty_columns` | OK |
 | `session_all` | `SessionProcessor.create_session_all` | OK (3 values per attribute assumed, as in MATLAB) |
 | `plsa.m`, `estep.m`, `mstep.m`, `normalize.m` | `src/models/plsa.py` `FourLayerPLSA`, `multinomial_probs` | OK (vectorized) |
-| `train.m` (best of 100 restarts, parfor) | `main.train` (process pool) | OK; old `plsa.train_multiple_runs` differs, see T3 |
+| `train.m` (best of 100 restarts, parfor) | `main.train` (process pool) | OK |
 | `main_mask.m`, `learn_aspects_from_mask.m` | `main.py` (`learn_aspects`, CLI) | OK |
 | `calc_matching.m`, `CalcEval.m`, `CalcSim.m`, `plot_conf_matrix.m` | `src/models/evaluation.py`, `main.py --eval` / `--eval-matlab` | OK (verified on `refs/`) |
-| `plot_eval_AoF.m`, `plot_sim.m` | - | not ported (plots only) |
-| `plot_*.m` | `src/visualization/plotter.py` | exists, not re-verified against MATLAB |
+| `plot_*.m` | `src/visualization/plotter.py` | exists, not verified against MATLAB (T8) |
 | `confirm_bias.m`, `learn_aspects_from_part.m`, `for_rev2.m`, `test_cor_p.m`, `multi_choose_prob.m` | - | not ported / not needed for the main flow (`multi_choose_prob.m` is NOT `exact_prob`) |
 
 ## 3. Data conventions (easy to get wrong)
@@ -97,6 +96,16 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt   # numpy is 
 - Verified on `refs/` (real data, 111 sessions): `lkh_ses` (max diff 1e-17), `seqmask` and `session_all` (exact), 4 sessions without AOF;
   the MATLAB `p_spe_topic3` gives paper Table 2 and 93/111 = 83.8 %; `cor.mat` (CalcSim) is reproduced.
   Python training (seed 0): spe K=3 log-likelihood -13249.52 (MATLAB -13248.47), Table 2 except one task-2 session (accuracy 82.9 %).
+- T3: `FourLayerPLSA.fit(sessions, train_lim=1e-4, max_itr=1000)` (MATLAB defaults, no printing per run); the unused identity P(o|v) layer,
+  `segments` argument, `train_multiple_runs`, `train_standard_plsa` and the `PLSA` alias were removed; `main.train` is the only restart loop.
+- T4: removed unused code that differed from MATLAB or hid errors: `data_loader.GazeDataLoader` (value range min..max) and the npz helpers,
+  `SessionProcessor.create_segsessions` / `_clean_segment_labels`, `math_utils.generate_all_pairs`, `GazeDataReader.items_to_semantic_attributes`;
+  fallbacks now raise errors (`calc_segments` default `N_value` / dummy likelihoods, built-in fake KB of `load_knowledge_base`, `None` returned by
+  `load_session_from_files`). `calc_segments` keeps `N_value` over all sessions (documented; equal to MATLAB on the paper data).
+  `exact_prob`'s renormalization of invalid `prob` is kept (irrelevant for valid input).
+- T5 / D4: README rewritten; stale scripts deleted (`main_four_layer.py`, `test_four_layer.py`, `test_with_arguments.py`, `test_actual_data.py`,
+  `inspect_results.py`, `test_comprehensive_visualization.py`, `test_likelihood_convergence.py`: mock data, nonexistent result files or removed APIs;
+  their roles are covered by `main.py` and `tests/`). `scikit-learn` removed from requirements (unused).
 - `GazeDataReader.load_session_from_files` on the raw session of `refs/` equals `gazedata.mat` usr 2 / task 1 (`f`, `dur`) before the H1 fix;
   `test_loadgaze_reference_matches_matlab_output` keeps this as a check of the MATLAB-exact reference `ml_load_gaze(matlab_bug=True)`.
 - T7: training verified (see below), acceptance criterion D6.
@@ -109,7 +118,19 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt   # numpy is 
   `save_gazedata(data, path)` writes a gazedata.mat (n_usr x n_task cells + KB) readable by `main.py --mat`; `process_session` is a quiet wrapper.
   Test: `test_load_all_sessions` (fake timestamp.list). `Set_selected.m` is still not ported (`selected` is not used by the main flow).
 
-## 6. Open tasks (suggested order: T3-T5)
+## 6. Open tasks
+
+### T8. Verify the visualization against the MATLAB plot scripts
+Where: `src/visualization/plotter.py` (`AspectPlotter`, not covered by tests). The functions mostly display matrices passed in by the caller,
+and several of them are not faithful ports: `plot_aspect_matrices` draws the same `vz` in its "All Data" and "MSET" rows and uses `KB.T`
+(12 x 5) as "ground truth" (should be `giventask`); `plot_likelihood_comparison` reads `p_*_topicK.npz` (compatible with `main.py`).
+Compare each function with its `plot_*.m` (`plot_L_topic.m`, `plot_conf_matrix.m`, `plot_sim.m`, `plot_eval_AoF.m`, `plot_dur_usr.m`,
+`plot_org_gaze.m`, `plot_aspect.R`), drive them from `main.py` / `evaluation.npz` outputs, and add smoke tests. The old mock-data demo scripts
+(`test_comprehensive_visualization.py`, `test_likelihood_convergence.py`) were deleted (they showed the wrong usage).
+
+### Not ported (not needed for the main flow)
+`Set_selected.m` (`selected` is not used elsewhere), the `segsession` / `seglabel` clean-up of `learn_aspects_from_mask.m` (saved but not used for
+training), `confirm_bias.m`, `learn_aspects_from_part.m` (+ the `p_part*` block of `calc_matching.m`), `for_rev2.m`, `test_cor_p.m`, `LoadQuestionnair.m`.
 
 ### T7. (DONE) Python vs MATLAB training - investigated, no bug found; acceptance criterion D6
 - Deterministic (`test_refs.py::test_em_from_matlab_p`): from MATLAB's `p_{spe,all}_topic3`, three E/M-steps of `FourLayerPLSA` equal a loop
@@ -160,32 +181,7 @@ Where: `src/data/gaze_reader.py`.
 - Not ported: `Set_selected.m` (hard-coded `session{usr,task}.selected = list(idx)` table for 37 users x 3 tasks).
 - Acceptance: for `sample_data/170116024150092.*` the result equals `load_session_from_files` (test exists for that path); add a multi-session test with a tiny fake `timestamp.list`.
 
-### T3. Old training API differs from MATLAB
-Where: `src/models/plsa.py` `train_multiple_runs`, `train_standard_plsa`; `FourLayerPLSA.fit`.
-- Defaults `train_lim=1e-6`, `train_num=10`, `max_itr=100` (MATLAB `1e-4`, `100`, `1000`; `main.py` already uses MATLAB values).
-- `fit` prints every run (and a warning when no observation model is set); `train_multiple_runs` silently skips runs with empty history (MATLAB errors).
-- `train_standard_plsa` passes `segments=None` positionally and is unused. Consider making `main.train` the single implementation.
-
-### T4. Small differences from MATLAB
-- `data_loader.GazeDataLoader.calculate_attribute_probabilities` uses the value range present in the session (`min..max`); MATLAB uses `1..N_value` over all sessions
-  (`main.calc_lkh` already does the latter). Align or remove.
-- `SegmentCalculator.calc_segments`: `N_value` from all sessions (MATLAB: session 1) and fallback `[3,4,3,5,4]` / 5 attributes when empty.
-- `SessionProcessor.create_segsessions` / `_clean_segment_labels` are not used (MATLAB saves `segsession` but trains on `seqmask`); `create_segsessions` has a
-  fallback vocabulary of 57 and masks only the first `min_rows` rows.
-- AOF rule: code/MATLAB use `count/l >= phi_k`, the paper writes `>` (see decision D1).
-- `exact_prob` renormalizes `prob` if it does not sum to 1; `exact_prob.m` computes `prob_vec = normalize(prob)` and then overwrites it (no normalization). Irrelevant for valid input.
-- `plsa.py` still imports `exact_prob` (unused).
-
-### T5. Stale scripts and README
-- Confirmed README errors (Quick Start): `load_session_from_files(gaze_csv_path=..., list_file_path=...)` (actual: `csv_file`, `list_file`);
-  `reader.knowledge_data.values` does not exist (`reader.knowledge_base`, a 12x5 int array = KB, not a P(o|v) matrix);
-  the example trains on `semantic_attribute_seq_onehot` (that is the "all" setting, not AOF masks); "Data Format" describes `knowledge.csv` as a
-  "Feature->Observation mapping" and a `.list` as `[101, 102, 103, 201, ...]` (all ids of a session share the task digit).
-  "Numerical results match MATLAB" is only true for the parts in the map above. The "4-layer" wording: `P(o|v)` is an identity mapping and does not change any computation.
-- `main_four_layer.py`, `test_four_layer.py`, `test_comprehensive_visualization.py` use random/mock data; `test_with_arguments.py` feeds the raw 5xT attribute
-  sequence (not an AOF mask) to `fit`; `test_actual_data.py` / `test_likelihood_convergence.py` depend on `load_all_sessions` (T2). Fix or delete; they do not test MATLAB equivalence.
-- (done) `gaze_reader.main_read_gaze_data` is now a CLI with explicit paths.
-- `test_actual_data.py` still calls the old `load_all_sessions()` without arguments (now a TypeError); it was already outside the test suite (D4).
+### T3-T5. (DONE, see section 5) Old training API, small differences, stale scripts and README
 
 ### T6. (mostly DONE with `refs/`, see section 5 and T7) End-to-end verification against real MATLAB output
 - Only synthetic data (multi-session) and one real session (`sample_data/`, gaze -> AOF mask looks right: CPU-high and memory-large rows lit for task 1) were checked.
@@ -199,6 +195,6 @@ Where: `src/models/plsa.py` `train_multiple_runs`, `train_standard_plsa`; `FourL
 - D1. AOF threshold `>=` vs `>`: irrelevant for this data (phi_k = 1/3 for every value, count/5 never equals 1/3); kept `>=`.
 - D2. Resolved: `refs/task_att.mat`.
 - D3. Add a `.gitattributes` (`python-ver/** text eol=lf`) to keep LF on Windows?
-- D4. Stale scripts in T5: fix or delete?
+- D4. Resolved: stale scripts are fixed if useful, deleted otherwise (all deleted, see section 5).
 - D5. Resolved: `refs/` (git-ignored, not to be committed).
 - D6. Resolved: Python training is accepted when <= 2 sessions move vs Table 2 and cosine is within 0.01 (seed 0; `test_python_training_close_to_paper`).
