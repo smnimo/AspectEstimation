@@ -66,7 +66,7 @@ every value is shared by 4 of the 12 items. A *session* = one participant x one 
 ```bash
 cd python-ver
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt   # numpy is not installed system-wide
-.venv/bin/python -m pytest tests -q          # MATLAB-equivalence tests (22 tests, ~3 s; test_refs.py is skipped without refs/)
+.venv/bin/python -m pytest tests -q          # MATLAB-equivalence tests (25 tests, ~5 s; test_refs.py is skipped without refs/)
 .venv/bin/python main.py --demo --train-num 5 --max-topics 3 --savedir /tmp/res   # smoke test, synthetic data
 .venv/bin/python main.py --mat refs/gazedata.mat --eval                           # real data (MATLAB defaults: 100 restarts, 5 topics), ~15 s
 .venv/bin/python main.py --eval-matlab refs/results                               # evaluate the MATLAB results of the paper
@@ -97,13 +97,17 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt   # numpy is 
   Python training (seed 0): spe K=3 log-likelihood -13249.52 (MATLAB -13248.47), Table 2 except one task-2 session (accuracy 82.9 %).
 - `GazeDataReader.load_session_from_files` on the raw session of `refs/` equals `gazedata.mat` usr 2 / task 1 (`f`, `dur`).
 
-## 6. Open tasks (suggested order: T7, T2 (+ H1), then T3-T5)
+## 6. Open tasks (suggested order: T2 (+ H1), then T3-T5)
 
-### T7. Close the gap between Python and MATLAB training (remaining part of T6)
-- Python spe K=3 ends ~1 below MATLAB in log-likelihood and differs in one session. Candidates: random init (MATLAB parfor streams) and the loose
-  relative criterion `lim = 1e-4` (Python stopped after 13 iterations, MATLAB after 21).
-- Deterministic check: start the Python E/M-steps from the MATLAB `p` and compare with MATLAB's `L` (note: `L(end)` is the log-likelihood of the
-  parameters *before* the last M-step). Then agree on an acceptance criterion with the user (e.g. Table 2 within +-1 session).
+### T7. (DONE) Python vs MATLAB training - investigated, no bug found; acceptance criterion D6
+- Deterministic (`test_refs.py::test_em_from_matlab_p`): from MATLAB's `p_{spe,all}_topic3`, three E/M-steps of `FourLayerPLSA` equal a loop
+  re-implementation of `plsa.m` on the real data (rel 1e-12); the first log-likelihood is >= MATLAB `L(end)` (`L(end)` belongs to the parameters
+  before the last M-step); MATLAB's `L` satisfies the stopping rule `|inc / L_new| <= 1e-4` for all saved models.
+- The saved MATLAB `p` is NOT converged: continuing EM from it (2000 iterations) raises L by ~1.7 (spe K=3) and changes the result
+  (spe accuracy 93 -> 94 sessions, all 84 -> 83). Differences of 1-2 sessions are therefore within the effect of `lim = 1e-4` alone.
+- Spread over 20 seeds (100 restarts each, K=3): spe 92-95 correct (paper 93), sessions moved vs Table 2: 0 (2 seeds), 1 (13), 2 (5);
+  all 82-84 (MATLAB 84); cosine within +-0.003 of MATLAB.
+- `test_refs.py::test_python_training_close_to_paper` uses the agreed criterion (D6) "<= 2 sessions moved vs Table 2, cosine within 0.01" (seed 0).
 
 ### H1. `LoadGaze.m` drops samples with only the left eye missing (decision: FIX in Python)
 - `x(x(:,1)==-1, 2) = x(x(:,1)==-1, 1)` runs after column 1 was filled, so it only touches rows where both eyes are -1; a missing *left* eye
@@ -184,4 +188,4 @@ Where: `src/models/plsa.py` `train_multiple_runs`, `train_standard_plsa`; `FourL
 - D3. Add a `.gitattributes` (`python-ver/** text eol=lf`) to keep LF on Windows?
 - D4. Stale scripts in T5: fix or delete?
 - D5. Resolved: `refs/` (git-ignored, not to be committed).
-- D6. Acceptance criterion for Python training vs MATLAB (T7).
+- D6. Resolved: Python training is accepted when <= 2 sessions move vs Table 2 and cosine is within 0.01 (seed 0; `test_python_training_close_to_paper`).
