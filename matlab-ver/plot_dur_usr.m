@@ -1,5 +1,6 @@
 load('gazedata.mat')
-dur = zeros(37, 3);
+S = numel(session);
+dur = zeros(size(session, 1), 3);
 for s = 1 : S
 %dur(session{s}.usr, session{s}.session_id) = length(session{s}.f);
 dur(session{s}.usr, session{s}.session_id) = session{s}.totalduration;

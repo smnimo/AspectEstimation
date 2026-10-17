@@ -17,17 +17,8 @@ for s = 1 : S
     lkh_ses{s} = cell(N_att, 1);
 end
 
-%% make all pair, max langth: 10
+%% window size
 win_size = 5;
-allpair3 = zeros(HomogenousProduct(3, win_size), 3); % N_value(1) ?????????????????????
-m = 1;
-for i = 0 : win_size
-    for j = 0 : win_size - i
-        k = win_size - i - j;
-        allpair3(m, :) = [i, j, k];
-        m = m + 1;
-    end
-end
 
 %% loop for sessions
 %s = 1;
@@ -37,19 +28,13 @@ prob_att = cellfun(@(x, y) hist(x, y) ./ sum(hist(x, y)), num2cell(semantic_attr
 attseq = semantic_attribute_seq{s};
 T = size(attseq, 2);
 %% ordinal variables
-for att = 1 : 5 %ordinal cariables
-%att = 1
+for att = 1 : N_att
 valseq = attseq(att, :);
-lkh_ses{s}{att} = ones(1, T);
-m = size(allpair3, 1);
-probset = zeros(m, 1);
-for i = 1 : m
-    probset(i) = exact_prob(prob_att{att}, allpair3(i, :));
-end
-%% calc likelihood
+lkh_ses{s}{att} = ones(1, T); % the first win_size-1 time points keep likelihood 1
+%% calc likelihood (multinomial, paper Eq. 1; any number of values per attribute)
 for t = win_size : T
-    h = hist(valseq(t-win_size+1:t), 1:size(prob_att{1}, 2));
-    lkh_ses{s}{att}(t) = probset(mean(allpair3==h, 2)==1);
+    h = hist(valseq(t-win_size+1:t), attrange{att});
+    lkh_ses{s}{att}(t) = exact_prob(prob_att{att}, h);
 end
 end
 end

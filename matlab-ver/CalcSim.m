@@ -6,10 +6,10 @@ load gazedata
 
 
 %%
-cor = cell(4, 1);
-cortop = cell(4, 1);
-cor_all = cell(4, 1);
-cortop_all = cell(4, 1);
+cor = cell(5, 1);
+cortop = cell(5, 1);
+cor_all = cell(5, 1);
+cortop_all = cell(5, 1);
 
 for topic = 1:5
 fprintf('topic : %d\n', topic);
@@ -19,4 +19,4 @@ fprintf('topic : %d\n', topic);
 end
 
 %%
-save(sprintf('./%s/cor', loaddir));
+save(sprintf('./%s/cor', loaddir), 'cor', 'cortop', 'cor_all', 'cortop_all');

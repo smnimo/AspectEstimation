@@ -84,8 +84,10 @@ results = main.learn_aspects(attrs, seqs, savedir='results')
   window likelihoods, AOF masks and `session_all` are identical; the MATLAB results give the paper's Table 2 (accuracy 83.8 %);
   Python training is accepted when at most 2 sessions differ from Table 2.
 
-Intentional differences from MATLAB (details in TODO.md): a missing left eye is filled from the right eye (`LoadGaze.m` drops such samples),
-gaze coordinates equal to 1 belong to the last grid column / row, invalid inputs raise errors instead of producing wrong values.
+Python follows the corrected matlab-ver (`../matlab-ver/TODO.md`); compared with the 2019 scripts used for the paper: a missing left eye
+is filled from the right eye, gaze coordinates equal to 1 belong to the last grid column / row, the AOF rule is `>` (paper),
+sessions without AOF are excluded from `cortop`, aspect matching keeps an already matched order, invalid inputs raise errors.
+None of these change the paper's numbers (Table 2, Fig. 10) on the refs data.
 
 ## Figures
 

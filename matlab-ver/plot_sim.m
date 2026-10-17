@@ -43,7 +43,7 @@ score{1} = mean([corta{topic}; corta_a{topic}], 2)';
 subplot(rangelength, 2, (topic - 2))
 bar(mean([corta{tt / 2 + 1, topic}; corta_a{tt / 2 + 1, topic}], 2))
 hold on
-errorbar(mean([corta{tt / 2 + 1, topic}; corta_a{tt / 2 + 1, topic}], 2), [var(corta{tt / 2 + 1, topic}); var(corta_a{tt / 2 + 1, topic})], '.')
+errorbar(mean([corta{tt / 2 + 1, topic}; corta_a{tt / 2 + 1, topic}], 2), [std(corta{tt / 2 + 1, topic}); std(corta_a{tt / 2 + 1, topic})], '.')
 set(gca,'xticklabel',{'with preprocessing','without preprocessing'})
 title(sprintf('topic:%d, # of candidate:%d', topic, topic/2-2));
 ylabel('Cosine similarity')
@@ -62,7 +62,7 @@ score{2} = mean([cortt{topic}; cortt_a{topic}], 2)';
 subplot(1, 2, 2)
 bar(mean([cortt{topic}; cortt_a{topic}], 2))
 hold on
-errorbar(mean([cortt{topic}; cortt_a{topic}], 2), [var(cortt{topic}); var(cortt_a{topic})], '.')
+errorbar(mean([cortt{topic}; cortt_a{topic}], 2), [std(cortt{topic}); std(cortt_a{topic})], '.') % std (was var)
 set(gca,'xticklabel',{'with MET','without MET'})
 title('mean of correlations');
 ylabel('Cosine similarity')

@@ -202,14 +202,16 @@ def learn_aspects(semantic_attributes: List[np.ndarray], semantic_attribute_seq:
 
 # ---------------------------------------------------------------- evaluation
 def run_evaluation(models: Dict[str, Dict[int, Tuple[np.ndarray, np.ndarray]]],
-                   giventask: np.ndarray, savedir: str, aof: Dict[str, np.ndarray] = None) -> Dict:
+                   giventask: np.ndarray, savedir: str, aof: Dict[str, np.ndarray] = None,
+                   no_aof: np.ndarray = None) -> Dict:
     """
     Evaluate models[tag][K] = (vz, zs) and save the matched results to savedir/evaluation.npz
 
     Unlike calc_matching.m, the training outputs (p_*_topicK) are not overwritten.
     aof (evaluation.aof_similarities, plot_eval_AoF.m) is printed and saved as well when given.
+    no_aof: sessions without AOF (see evaluation.evaluate); detected from the uniform zs if None.
     """
-    ev = evaluation.evaluate(models, giventask)
+    ev = evaluation.evaluate(models, giventask, no_aof=no_aof)
     for line in evaluation.format_summary(ev, giventask.shape[0]):
         print(line)
     arrays = {f'{tag}_topic{K}_{name}': value
@@ -217,7 +219,7 @@ def run_evaluation(models: Dict[str, Dict[int, Tuple[np.ndarray, np.ndarray]]],
     if aof is not None:
         names, p = evaluation.aof_ttests(aof)
         print("AOF detection, mean cosine similarity (sessions with AOF): " +
-              ", ".join(f"{n} = {np.nanmean(aof[n][aof['cos_dist_mset'] >= 0]):.3f}" for n in names))
+              ", ".join(f"{n} = {np.mean(aof[n][~np.isnan(aof['cos_dist_mset'])]):.3f}" for n in names))
         print(f"  t-test p-values (upper triangle, order {names}):\n{np.round(p, 4)}")
         arrays.update(aof)
         arrays['aof_ttest_p'] = p
@@ -353,7 +355,8 @@ def main():
             aof = evaluation.aof_similarities([s['f'] for s in sessions], attrs, results['session_all'],
                                               results['seqmask'], evaluation.session_tasks(len(seqs), giventask.shape[0]),
                                               giventask)
-        ev = run_evaluation(models, giventask, args.savedir, aof)
+        no_aof = np.array([not m.any() for m in results['seqmask']])
+        ev = run_evaluation(models, giventask, args.savedir, aof, no_aof)
         if args.plot:
             histories = {tag: {K: r['history'] for K, r in results[tag].items()} for tag in ('spe', 'all')}
             save_figures(ev, giventask, histories, figdir, aof, sessions, results['session_all'], results['seqmask'])

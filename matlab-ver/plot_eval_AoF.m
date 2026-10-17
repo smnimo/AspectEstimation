@@ -33,10 +33,12 @@ cos_dist_mset(s) = giventask(session{s}.task, :) / norm(giventask(session{s}.tas
 end
 
 save('distances', 'cos_dist_c', 'cos_dist_mset', 'cos_dist_top', 'cos_dist_all')
-cos_dist_c = cos_dist_c(cos_dist_mset>=0);
-cos_dist_top = cos_dist_top(cos_dist_mset>=0);
-cos_dist_all = cos_dist_all(cos_dist_mset>=0);
-cos_dist_mset = cos_dist_mset(cos_dist_mset>=0);
+% sessions without AOF (cos_dist_mset = 0/0 = NaN) are excluded from all detectors
+keep = ~isnan(cos_dist_mset);
+cos_dist_c = cos_dist_c(keep);
+cos_dist_top = cos_dist_top(keep);
+cos_dist_all = cos_dist_all(keep);
+cos_dist_mset = cos_dist_mset(keep);
 
 boxplot([cos_dist_all, cos_dist_top, cos_dist_c, cos_dist_mset])
 set(gca,'xticklabel',{'All', 'Top', 'Comparison','LD'})

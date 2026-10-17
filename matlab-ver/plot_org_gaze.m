@@ -24,12 +24,15 @@ while(ischar(tline))
 
         x = gaze(:, [1,3]);
         y = gaze(:, [2,4]);
-        x(x(:, 1)==-1, 1) = x(x(:, 1)==-1, 2);
-        x(x(:, 1)==-1, 2) = x(x(:, 1)==-1, 1);
+        % a missing eye (-1) is filled from the other eye, as in LoadGaze.m
+        missing = x == -1;
+        x(missing(:, 1), 1) = x(missing(:, 1), 2);
+        x(missing(:, 2), 2) = x(missing(:, 2), 1);
         x = mean(x, 2);
 
-        y(y(:, 1)==-1, 1) = y(y(:, 1)==-1, 2);
-        y(y(:, 1)==-1, 2) = y(y(:, 1)==-1, 1);
+        missing = y == -1;
+        y(missing(:, 1), 1) = y(missing(:, 1), 2);
+        y(missing(:, 2), 2) = y(missing(:, 2), 1);
         y = mean(y, 2);
         
         y(x<0)=[];

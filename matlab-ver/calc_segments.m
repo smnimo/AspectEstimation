@@ -5,8 +5,10 @@ S = length(lkh_ses);
 seglabel = cell(S, 1); % segment label'
 seqmask = cell(S, 1);
 
-N_value = max(semantic_attribute_seq{1}, [], 2);
-N_att = size(semantic_attribute_seq{1}, 1);
+% value ranges from the catalogs of all sessions, as in calc_lkh.m
+% (the browsed values of session 1 only give fewer rows if session 1 never shows a value)
+N_value = max(cell2mat(semantic_attributes(:)))';
+N_att = size(cell2mat(semantic_attributes(:)), 2);
 attrange = cell(1, N_att);
 for n = 1 : N_att
     attrange{n} = 1 : N_value(n); % attribute value range
@@ -26,7 +28,8 @@ for s = 1 : S
         for i = 1 : length(tmp)
             x1 = tmp(i) - win_size+1;
             x2 = tmp(i);
-            valflag =  (normalize(hist(valseq(x1:x2), 1:size(prob_att{1}, 2))) >= prob_att{att}); 
+            % AOF: relative frequency in the window > phi_k (paper; '>=' before, identical when phi = 1/3)
+            valflag =  (normalize(hist(valseq(x1:x2), attrange{att})) > prob_att{att});
             for v = attrange{att}
                 if valflag(v)
                     looked_value(v, x1:x2)=1;

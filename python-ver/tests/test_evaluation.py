@@ -33,6 +33,11 @@ def ml_perms(K):
     return out
 
 
+def ml_sortrows_perms(K):
+    """sortrows(perms(1:K)) (0-based): lexicographic order (fixed calc_matching.m)"""
+    return sorted(ml_perms(K))
+
+
 def ml_cor_task(giventask, vz):
     """1 - squareform(pdist([normalize(giventask, 2); vz'], 'cosine'))(1:n_task, end-K+1:end)"""
     g = giventask / giventask.sum(1, keepdims=True)
@@ -42,18 +47,19 @@ def ml_cor_task(giventask, vz):
 
 def ml_calc_matching(vz, zs, giventask):
     K = vz.shape[1]
-    allpair = ml_perms(K)
+    allpair = ml_sortrows_perms(K)
     corscore = [np.sum(np.diag(ml_cor_task(giventask, vz[:, p]))) for p in allpair]
     mi = int(np.argmax(corscore))  # first maximum, as MATLAB max
     return vz[:, allpair[mi]], zs[:, allpair[mi]]
 
 
-def ml_conf(zs, n_usr, n_task):
+def ml_conf(zs, n_usr, n_task, noaof):
+    """fixed plot_conf_matrix.m: sessions without AOF -> no comparison"""
     conf = np.zeros((n_task, n_task + 1), int)
     for task in range(n_task):
         z = zs[task * n_usr:(task + 1) * n_usr]
         est = z.argmax(1) + 1
-        est[z.max(1) == 1 / n_task] = n_task + 1
+        est[noaof[task * n_usr:(task + 1) * n_usr]] = n_task + 1
         conf[task] = np.histogram(est, bins=np.arange(1, n_task + 3) - 0.5)[0]
     return conf
 
@@ -76,6 +82,7 @@ def synthetic_model(K, perm, n_usr=6, seed=0):
 # ------------------------------------------------------------------ tests
 def test_perms_order():
     assert ml_perms(3) == [[2, 1, 0], [2, 0, 1], [1, 2, 0], [1, 0, 2], [0, 2, 1], [0, 1, 2]]
+    assert ml_sortrows_perms(3) == [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]]
 
 
 def test_cosine_matches_pdist():
@@ -93,17 +100,23 @@ def test_matching_recovers_known_permutation():
                               np.arange(min(3, K)))
         rvz, rzs = ml_calc_matching(vz, zs, GT)
         assert np.array_equal(mvz, rvz) and np.array_equal(mzs, rzs)  # incl. MATLAB tie-breaking
+        # idempotent: matching a matched result keeps it
+        assert np.array_equal(evaluation.match_aspects(mvz, mzs, GT)[2], np.arange(K))
 
 
 def test_calc_eval_and_confusion():
     vz, zs = synthetic_model(3, [0, 1, 2])
     tasks = evaluation.session_tasks(zs.shape[0], 3)
-    cor_task, cortop = evaluation.calc_eval(vz, zs, tasks, GT)
+    noaof = np.zeros(18, dtype=bool)
+    noaof[1] = True  # the uniform session
+    cor_task, cortop = evaluation.calc_eval(vz, zs, tasks, GT, noaof)
     ref = ml_cor_task(GT, vz)
     assert np.allclose(cor_task, ref, atol=1e-12)
-    assert np.allclose(cortop, [ref[t - 1, np.argmax(zs[s])] for s, t in enumerate(tasks)], atol=1e-12)
-    conf, acc = evaluation.confusion_matrix(zs, 6, 3)
-    assert np.array_equal(conf, ml_conf(zs, 6, 3))
+    expected = [np.nan if noaof[s] else ref[t - 1, np.argmax(zs[s])] for s, t in enumerate(tasks)]
+    assert np.allclose(cortop, expected, atol=1e-12, equal_nan=True)
+    conf, acc = evaluation.confusion_matrix(zs, 6, 3, noaof)
+    assert np.array_equal(conf, ml_conf(zs, 6, 3, noaof))
+    assert np.array_equal(evaluation.confusion_matrix(zs, 6, 3)[0], conf)  # uniform-zs rule of 2019: same
     assert conf[0, 3] == 1 and acc == np.trace(conf[:, :3]) / 18
 
 

@@ -54,15 +54,12 @@ class SegmentCalculator:
         seglabel = []
         seqmask = []
         
-        # Attribute value ranges: maximum over all sessions.
-        # calc_segments.m:8 uses session 1 only, which gives fewer rows if session 1 never shows a value;
-        # both agree on the paper data (session 1 shows every value), see TODO.md.
-        sequences = [seq for seq in semantic_attribute_seq if seq.size > 0]
-        if not sequences:
-            raise ValueError("no non-empty attribute sequence")
-        all_sequences = np.concatenate(sequences, axis=1)
-        N_value = np.max(all_sequences, axis=1)
-        N_att = all_sequences.shape[0]
+        # Attribute value ranges from the catalogs of all sessions, as calc_lkh.m and the fixed calc_segments.m
+        # (the 2019 calc_segments.m used the browsed values of session 1; identical on the paper data)
+        if S == 0:
+            raise ValueError("no session")
+        N_value = np.max(np.vstack(semantic_attributes), axis=0)
+        N_att = len(N_value)
             
         attrange = []
         for n in range(N_att):
@@ -104,7 +101,8 @@ class SegmentCalculator:
                                                  bins=len(prob_att[att]),
                                                  range=(1, len(prob_att[att]) + 1))[0]
                         normalized_hist = normalize(hist_counts.astype(float))
-                        valflag = (normalized_hist >= prob_att[att])
+                        # paper: x / l > phi (calc_segments.m used >=; identical when phi = 1/3)
+                        valflag = (normalized_hist > prob_att[att])
                         
                         for v_idx, v in enumerate(attrange[att]):
                             if v_idx < len(valflag) and valflag[v_idx]:

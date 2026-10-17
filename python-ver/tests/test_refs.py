@@ -84,7 +84,7 @@ def test_seqmask_and_session_all_match_segsessions(step1):
 
 
 @pytest.mark.parametrize('tag', ['spe', 'all'])
-def test_calc_eval_matches_cor_mat(tag):
+def test_calc_eval_matches_cor_mat(step1, tag):
     """
     cor.mat (CalcSim.m) vs CalcEval on the saved p, without re-matching.
 
@@ -99,15 +99,22 @@ def test_calc_eval_matches_cor_mat(tag):
         own = evaluation.cosine_task_aspect(evaluation.GIVENTASK, vz)
         perm = [int(np.argmin(np.abs(own - ref[:, [j]]).sum(0))) for j in range(K)]
         assert sorted(perm) == list(range(K))
+        no_aof = np.array([not m.any() for m in step1[1]]) if tag == 'spe' else None
         cor_task, cortop = evaluation.calc_eval(vz[:, perm], zs[:, perm],
-                                                evaluation.session_tasks(zs.shape[0], 3), evaluation.GIVENTASK)
+                                                evaluation.session_tasks(zs.shape[0], 3), evaluation.GIVENTASK, no_aof)
         assert np.allclose(cor_task, ref, atol=1e-12)
-        assert np.allclose(cortop, cor[key.replace('cor', 'cortop')].ravel()[K - 1].ravel(), atol=1e-12)
+        # the 2019 CalcEval.m kept sessions without AOF (aspect 1); the fixed one gives NaN for them
+        ref_top = cor[key.replace('cor', 'cortop')].ravel()[K - 1].ravel()
+        keep = ~np.isnan(cortop)
+        assert np.allclose(cortop[keep], ref_top[keep], atol=1e-12)
+        assert (~keep).sum() == (TABLE2[:, -1].sum() if tag == 'spe' else 0)
 
 
-def test_saved_results_are_matched_and_reproduce_table2():
+def test_saved_results_are_matched_and_reproduce_table2(step1):
     models = pipeline.load_matlab_models(RESULTS)
-    ev = evaluation.evaluate(models, evaluation.GIVENTASK)
+    no_aof = np.array([not m.any() for m in step1[1]])
+    ev = evaluation.evaluate(models, evaluation.GIVENTASK, no_aof=no_aof)
+    assert np.array_equal(evaluation.evaluate(models, evaluation.GIVENTASK)['spe'][3]['conf'], TABLE2)
     for tag in ('spe', 'all'):
         for K in range(2, 6):
             k = min(3, K)

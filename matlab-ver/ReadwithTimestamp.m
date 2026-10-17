@@ -1,8 +1,15 @@
 %%%fileread
 
-KB = csvread('../knowledge/knowledge.csv');
+% input paths (set knowledge_csv / expdir before running this script to change them)
+if ~exist('knowledge_csv', 'var')
+    knowledge_csv = '../knowledge/knowledge.csv';
+end
+if ~exist('expdir', 'var')
+    expdir = '../experiment/';
+end
+KB = csvread(knowledge_csv);
 
-h = '../experiment/';
+h = expdir;
 fid = fopen(strcat(h, 'timestamp.list'));
 tline = fgetl(fid);
 
@@ -28,7 +35,8 @@ while(ischar(tline))
         session{usr, task}.list = list;
         session{usr, task}.task = task;
         session{usr, task}.usr = usr;
-        session{usr, task}.totalduration = (data(end, 1) - data(1, 1))/1000000; %ms
+        session{usr, task}.session_id = session_id; % order of the session for this user (1..3)
+        session{usr, task}.totalduration = (data(end, 1) - data(1, 1))/1000000; % s
         semantic_attribute_seq{usr, task} = KB(list(f), :)';
         semantic_attributes{usr,task} = KB(list, :);
         if task == 1
@@ -42,6 +50,7 @@ while(ischar(tline))
     count = count + 1;
     tline = fgetl(fid);
 end
+fclose(fid);
 
 Set_selected
 save('gazedata', 'session', 'semantic_attribute_seq', 'semantic_attributes', 'KB');
