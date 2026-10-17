@@ -19,6 +19,7 @@ corta_a = cellfun(@max, cor_all, 'UniformOutput', false);
 % plsa: aspect-task
 cortt = cellfun(@(x) max(x, [], 2)', cor, 'UniformOutput', false);
 cortt_a = cellfun(@(x) max(x, [], 2)', cor_all, 'UniformOutput', false);
+topic = 3; % number of aspects of the active figure (was only set inside the commented-out block below)
 %{
 figure('Name', 'TopicModel: aspect-task')
 %{

@@ -32,7 +32,7 @@ cos_dist_all(s) = giventask(session{s}.task, :) / norm(giventask(session{s}.task
 cos_dist_mset(s) = giventask(session{s}.task, :) / norm(giventask(session{s}.task, :)) * sum(seqmask{s}, 2) /norm(sum(seqmask{s}, 2));
 end
 
-save('distances', 'cos_dist_c', 'cos_dist_mset', 'cos_dist_top', 'cos_dist_all')
+save('distances.mat', 'cos_dist_c', 'cos_dist_mset', 'cos_dist_top', 'cos_dist_all')
 % sessions without AOF (cos_dist_mset = 0/0 = NaN) are excluded from all detectors
 keep = ~isnan(cos_dist_mset);
 cos_dist_c = cos_dist_c(keep);

@@ -40,5 +40,5 @@ end
 end
 
 %%save 
-save('lkh_win_5', 'lkh_ses');
+save('lkh_win_5.mat', 'lkh_ses');
 

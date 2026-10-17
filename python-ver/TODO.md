@@ -11,9 +11,9 @@ open items are in section 1.
 ## 1. Open tasks (verified against the code on 2026-10-17)
 
 - O1 (paper Fig. 8) and O2 (general `session_all` offsets) are done (section 5).
-- **O3 (D3). `.gitattributes`** (`python-ver/** text eol=lf`) to keep LF on Windows: not added yet (all files are LF now).
-- **O4. Re-check after the first MATLAB run of the fixed matlab-ver.** The `.m` fixes were never executed; if running them
-  reveals differences (e.g. `rng(seed + i)` streams, error fixes), update python-ver and section 4.
+- **O4. Re-check after the first MATLAB run of the fixed matlab-ver.** The fixed scripts were run in Octave (2026-10-18) and
+  agree with python-ver (step 1 identical, `distances.mat`, Fig. 8, the fixed gaze reader (`dur` 5e-15), Table 2 within D6);
+  only a MATLAB run is pending (`../matlab-ver/TODO.md` O1).
 - Note: the paper-figure functions keep the paper's layout of 5 attributes x 3 values (`evaluation.GIVENTASK`,
   `aof_similarities` like the 3 x 5 `AoF` of `plot_eval_AoF.m`, axis labels in `plotter.py`); the pipeline itself
   (steps 1 and 2, matching, confusion matrix) handles any number of values per attribute.
@@ -108,6 +108,5 @@ uv venv && uv pip install -r requirements.txt          # or python3 -m venv .ven
 
 ## 6. Decisions
 
-- Open: D3 (`.gitattributes`, O3).
-- Resolved: D1 AOF rule `>` (paper; no effect on this data), D2 `task_att.mat` = `evaluation.GIVENTASK`, D4 stale scripts deleted,
+- Resolved: D3 `.gitattributes` at the repository root (LF for code / documents, raw data untouched), D1 AOF rule `>` (paper; no effect on this data), D2 `task_att.mat` = `evaluation.GIVENTASK`, D4 stale scripts deleted,
   D5 `refs/` is git-ignored, D6 training acceptance criterion (section 4), H1 fixed in both versions, aspect plots without scaling.

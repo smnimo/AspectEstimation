@@ -11,42 +11,42 @@ usr_nocomp1 = [1, 3, 6, 18, 23, 35, 37];
 
 subplot(2, 1, 1)
 [~, id] = sort(mean(dur'));
-boxplot(dur(id, :)', num2str(id'))
+boxplot(dur(id, :)') % participant ids as tick labels (works in MATLAB and Octave)
+set(gca, 'XTick', 1:numel(id), 'XTickLabel', cellstr(num2str(id')))
 ylim([0 160])
 nocomp2id = find(sum(id==usr_nocomp2'));
 for s = 1 : length(usr_nocomp2)
     x = [nocomp2id(s)-0.5, nocomp2id(s)+0.5, nocomp2id(s)+0.5, nocomp2id(s)-0.5];
     y = [0, 0, 160, 160];
-    patch(x, y, 'r')
+    patch(x, y, 'r', 'FaceAlpha', 0.3) % transparency set per patch (alpha() is MATLAB-only)
 end
 nocomp1id = find(sum(id==usr_nocomp1'));
 for s = 1 : length(usr_nocomp1)
     x = [nocomp1id(s)-0.5, nocomp1id(s)+0.5, nocomp1id(s)+0.5, nocomp1id(s)-0.5];
     y = [0, 0, 160, 160];
-    patch(x, y, 'y')
+    patch(x, y, 'y', 'FaceAlpha', 0.3)
 end
-alpha(0.3)
 ylabel('duration(s)')
 xlabel('participant id')
 title('sort by mean')
 
 subplot(2, 1, 2)
 [~, id] = sort(median(dur'));
-boxplot(dur(id, :)', num2str(id'))
+boxplot(dur(id, :)') % participant ids as tick labels (works in MATLAB and Octave)
+set(gca, 'XTick', 1:numel(id), 'XTickLabel', cellstr(num2str(id')))
 ylim([0 160])
 nocomp2id = find(sum(id==usr_nocomp2'));
 for s = 1 : length(usr_nocomp2)
     x = [nocomp2id(s)-0.5, nocomp2id(s)+0.5, nocomp2id(s)+0.5, nocomp2id(s)-0.5];
     y = [0, 0, 160, 160];
-    patch(x, y, 'r')
+    patch(x, y, 'r', 'FaceAlpha', 0.3) % transparency set per patch (alpha() is MATLAB-only)
 end
 nocomp1id = find(sum(id==usr_nocomp1'));
 for s = 1 : length(usr_nocomp1)
     x = [nocomp1id(s)-0.5, nocomp1id(s)+0.5, nocomp1id(s)+0.5, nocomp1id(s)-0.5];
     y = [0, 0, 160, 160];
-    patch(x, y, 'y')
+    patch(x, y, 'y', 'FaceAlpha', 0.3)
 end
-alpha(0.3)
 ylabel('duration(s)')
 xlabel('participant id')
 title('sort by median')

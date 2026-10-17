@@ -9,4 +9,4 @@ giventask = zeros(numel(task_att), 15);
 for k = 1 : numel(task_att)
     giventask(k, task_att{k}) = 1;
 end
-save('task_att', 'giventask', 'task_att');
+save('task_att.mat', 'giventask', 'task_att');

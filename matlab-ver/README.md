@@ -11,13 +11,17 @@ step 2 learns aspects and per-session interests with pLSA (the pIAF model). A Py
 **Status:** the scripts used for the paper (kept in `../python-ver/refs`, not in git) were corrected for this release:
 the pipeline runs end to end, latent bugs were fixed, and paper Fig. 8, which was computed with an indexing bug, is now computed
 as described in the paper. The corrected scripts have **not yet been run in MATLAB** (they were checked against the paper-time
-outputs through the Python port). See [TODO.md](TODO.md) for every change and its effect.
+outputs through the Python port) and run with GNU Octave; one run in MATLAB is still pending. See [TODO.md](TODO.md) for every
+change and its effect.
 
 ## Requirements
 
 - MATLAB with the Statistics and Machine Learning Toolbox (`pdist`, `squareform`, `ttest2`, `combnk`, `boxplot`).
   `train.m` uses `parfor` (Parallel Computing Toolbox; runs serially without it).
 - R with `corrplot` for `plot_aspect.R` (optional).
+- GNU Octave (>= 10, with the `statistics` package) also runs the scripts: start with `pkg load statistics` and
+  `save_default_options('-mat7-binary')` (MATLAB-compatible `.mat` files); `parfor` runs serially and `histogram`
+  (`plot_duration_segmentation_trialID.m`) is not available.
 
 ## Data layout
 
@@ -70,7 +74,7 @@ Processing details:
 | `plot_L_topic.m` | final log-likelihood vs number of aspects; aspects as images |
 | `plot_aspect.R` | aspects as a circle matrix (paper Fig. 9) from `results/Akq_*.csv`, values not scaled |
 | `plot_sim_task_asp.m`, `plot_sim.m` | cosine similarity between tasks and matched aspects (paper Fig. 10); `plot_sim.m` error bars = std |
-| `disp_mask_for_paper.m`, `plot_mask_for_paper.m`, `disp_mask.m` | all values and AOF of a session (paper Fig. 7 = session 17) |
+| `plot_mask.m` | function: all values and AOF of given sessions from `segsessions.mat` (`plot_mask(17)` = paper Fig. 7) |
 | `plot_org_gaze.m` | gaze trajectory over the screenshot (paper Fig. 6) |
 | `for_rev2.m` | number of AOF per temporal position (paper Fig. 8, corrected: TODO A1), durations and number of items per task |
 | `plot_eval_AoF.m` | similarity of AOF detected by All / Top / Comparison / LD to the task, t-tests -> `distances.mat` |

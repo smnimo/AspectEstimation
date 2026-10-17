@@ -9,7 +9,7 @@ savedir = 'results'
 targets = {'spe', 'all'};
 for ti = 1 : numel(targets)
 for topic = 2:5
-    fname = sprintf('./%s/p_%s_topic%d', savedir, targets{ti}, topic);
+    fname = sprintf('./%s/p_%s_topic%d.mat', savedir, targets{ti}, topic);
     load(fname);
 
     allpair = sortrows(perms(1:topic)); % lexicographic order: an already matched p keeps its order (idempotent)
