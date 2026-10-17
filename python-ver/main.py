@@ -6,8 +6,12 @@ Translated from matlab-ver/main_mask.m (calc_lkh.m + learn_aspects_from_mask.m):
   1st step: likelihood-based short-term analysis -> AOF masks   (calc_lkh, calc_segments)
   2nd step: pLSA on the AOF masks ("spe") and, for comparison, on all attribute values ("all")
 
+Evaluation (calc_matching.m, CalcSim.m, plot_conf_matrix.m) with --eval, or on MATLAB results with --eval-matlab.
+
 Usage:
   python main.py --mat ../gazedata.mat          # gazedata.mat made by ReadwithTimestamp.m
+  python main.py --mat ../gazedata.mat --eval   # + matching, cosine similarity, confusion matrix
+  python main.py --eval-matlab refs/results     # evaluate MATLAB p_{spe,all}_topicK.mat
   python main.py --demo --train-num 5           # synthetic data (smoke test)
 """
 
@@ -25,6 +29,7 @@ import numpy as np
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'src'))
 
 from data.data_loader import LikelihoodCalculator
+from models import evaluation
 from models.plsa import FourLayerPLSA
 from models.segments import SegmentCalculator, SessionProcessor
 
@@ -126,6 +131,14 @@ def train(sessions: List[np.ndarray], n_topics: int, lim: float, train_num: int,
     return max(results, key=lambda r: r[1][-1])
 
 
+def _object_array(arrays: List[np.ndarray]) -> np.ndarray:
+    """1-D object array of per-session arrays (like a MATLAB cell); np.array(..., dtype=object)
+    fails or stacks when the arrays share their first dimension"""
+    out = np.empty(len(arrays), dtype=object)
+    out[:] = arrays
+    return out
+
+
 def learn_aspects(semantic_attributes: List[np.ndarray], semantic_attribute_seq: List[np.ndarray],
                   win_size: int = 5, thr: float = 0.03, max_topics: int = 5,
                   train_num: int = 100, lim: float = 1e-4, max_itr: int = 1000,
@@ -150,8 +163,8 @@ def learn_aspects(semantic_attributes: List[np.ndarray], semantic_attribute_seq:
 
     os.makedirs(savedir, exist_ok=True)
     np.savez(os.path.join(savedir, 'segsessions.npz'),
-             seglabel=np.array(seglabel, dtype=object), seqmask=np.array(seqmask, dtype=object),
-             session_all=np.array(session_all, dtype=object), win_size=win_size, thr=thr)
+             seglabel=_object_array(seglabel), seqmask=_object_array(seqmask),
+             session_all=_object_array(session_all), win_size=win_size, thr=thr)
 
     results = {'seglabel': seglabel, 'seqmask': seqmask, 'session_all': session_all,
                'spe': {}, 'all': {}}
@@ -169,11 +182,47 @@ def learn_aspects(semantic_attributes: List[np.ndarray], semantic_attribute_seq:
     return results
 
 
+# ---------------------------------------------------------------- evaluation
+def run_evaluation(models: Dict[str, Dict[int, Tuple[np.ndarray, np.ndarray]]],
+                   giventask: np.ndarray, savedir: str) -> Dict:
+    """
+    Evaluate models[tag][K] = (vz, zs) and save the matched results to savedir/evaluation.npz
+
+    Unlike calc_matching.m, the training outputs (p_*_topicK) are not overwritten.
+    """
+    ev = evaluation.evaluate(models, giventask)
+    for line in evaluation.format_summary(ev, giventask.shape[0]):
+        print(line)
+    os.makedirs(savedir, exist_ok=True)
+    arrays = {f'{tag}_topic{K}_{name}': value
+              for tag, by_topic in ev.items() for K, r in by_topic.items() for name, value in r.items()}
+    np.savez(os.path.join(savedir, 'evaluation.npz'), **arrays)
+    return ev
+
+
+def load_matlab_models(loaddir: str, max_topics: int = 5) -> Dict[str, Dict[int, Tuple[np.ndarray, np.ndarray]]]:
+    """Load p_{spe,all}_topicK.mat (K = 1..max_topics) saved by learn_aspects_from_mask.m"""
+    models = {}
+    for tag in ('spe', 'all'):
+        models[tag] = {}
+        for K in range(1, max_topics + 1):
+            path = os.path.join(loaddir, f'p_{tag}_topic{K}.mat')
+            if os.path.exists(path):
+                zs, vz, _ = evaluation.load_matlab_result(path)
+                models[tag][K] = (vz, zs)
+    return models
+
+
 def main():
     parser = argparse.ArgumentParser(description="AspectEstimation pipeline (main_mask.m)")
     src = parser.add_mutually_exclusive_group(required=True)
     src.add_argument('--mat', type=str, help="gazedata.mat created by ReadwithTimestamp.m")
     src.add_argument('--demo', action='store_true', help="use synthetic data")
+    src.add_argument('--eval-matlab', type=str, metavar='DIR',
+                     help="only evaluate MATLAB results (p_{spe,all}_topicK.mat) in DIR")
+    parser.add_argument('--eval', action='store_true', help="evaluate the learned aspects")
+    parser.add_argument('--task-att', type=str, default=None,
+                        help="task_att.mat with giventask (default: built-in task-related values)")
     parser.add_argument('--win-size', type=int, default=5)
     parser.add_argument('--thr', type=float, default=0.03)
     parser.add_argument('--max-topics', type=int, default=5)
@@ -184,14 +233,23 @@ def main():
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--savedir', type=str, default='results')
     args = parser.parse_args()
+    giventask = evaluation.load_giventask(args.task_att)
+
+    if args.eval_matlab:
+        run_evaluation(load_matlab_models(args.eval_matlab, args.max_topics), giventask, args.savedir)
+        return
 
     if args.demo:
         attrs, seqs = create_demo_data(seed=args.seed)
     else:
         attrs, seqs = load_gazedata_mat(args.mat)
 
-    learn_aspects(attrs, seqs, args.win_size, args.thr, args.max_topics, args.train_num,
-                  args.lim, args.max_itr, args.jobs, args.seed, args.savedir)
+    results = learn_aspects(attrs, seqs, args.win_size, args.thr, args.max_topics, args.train_num,
+                            args.lim, args.max_itr, args.jobs, args.seed, args.savedir)
+    if args.eval:
+        models = {tag: {K: (np.stack(r['params']['vz'], axis=1), r['params']['zs'])
+                        for K, r in results[tag].items()} for tag in ('spe', 'all')}
+        run_evaluation(models, giventask, args.savedir)
 
 
 if __name__ == "__main__":

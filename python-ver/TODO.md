@@ -39,7 +39,8 @@ every value is shared by 4 of the 12 items. A *session* = one participant x one 
 | `plsa.m`, `estep.m`, `mstep.m`, `normalize.m` | `src/models/plsa.py` `FourLayerPLSA`, `multinomial_probs` | OK (vectorized) |
 | `train.m` (best of 100 restarts, parfor) | `main.train` (process pool) | OK; old `plsa.train_multiple_runs` differs, see T3 |
 | `main_mask.m`, `learn_aspects_from_mask.m` | `main.py` (`learn_aspects`, CLI) | OK |
-| `calc_matching.m`, `CalcEval.m`, `CalcSim.m`, `plot_conf_matrix.m`, `plot_eval_AoF.m` | - | not ported (T1) |
+| `calc_matching.m`, `CalcEval.m`, `CalcSim.m`, `plot_conf_matrix.m` | `src/models/evaluation.py`, `main.py --eval` / `--eval-matlab` | OK (verified on `refs/`) |
+| `plot_eval_AoF.m`, `plot_sim.m` | - | not ported (plots only) |
 | `plot_*.m` | `src/visualization/plotter.py` | exists, not re-verified against MATLAB |
 | `confirm_bias.m`, `learn_aspects_from_part.m`, `for_rev2.m`, `test_cor_p.m`, `multi_choose_prob.m` | - | not ported / not needed for the main flow (`multi_choose_prob.m` is NOT `exact_prob`) |
 
@@ -57,7 +58,7 @@ every value is shared by 4 of the 12 items. A *session* = one participant x one 
 - Tasks (paper Table 1) and task-related values (verified: the `candidate` items of `ReadwithTimestamp.m` satisfy them):
   task 1 (home, movies/games): CPU = 3, memory = 3; task 2 (carry, notes): screen = 1, weight = 1; task 3 (low cost, web): price = 1, memory = 3.
   As 15-dim vectors (index = attribute*3 + value-1): task 1 -> {8, 11}, task 2 -> {3, 12}, task 3 -> {0, 11}.
-  `task_att.mat` (`giventask`, 3x15, rows normalized by `normalize(giventask, 2)`) is **not in the repo**; the vectors above are inferred.
+  `task_att.mat` (`giventask`, 3x15) in `refs/` equals these vectors (`evaluation.GIVENTASK`).
 - Time index: MATLAB is 1-based, windows are `t = win_size:T` -> 0-based `win_size-1 .. T-1` (this was a bug, fixed).
 
 ## 4. Environment and verification
@@ -65,15 +66,18 @@ every value is shared by 4 of the 12 items. A *session* = one participant x one 
 ```bash
 cd python-ver
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt   # numpy is not installed system-wide
-.venv/bin/python -m pytest tests -q          # MATLAB-equivalence tests (10 tests, ~15 s)
+.venv/bin/python -m pytest tests -q          # MATLAB-equivalence tests (22 tests, ~3 s; test_refs.py is skipped without refs/)
 .venv/bin/python main.py --demo --train-num 5 --max-topics 3 --savedir /tmp/res   # smoke test, synthetic data
-.venv/bin/python main.py --mat ../gazedata.mat                                    # real data (MATLAB defaults: 100 restarts, 5 topics)
+.venv/bin/python main.py --mat refs/gazedata.mat --eval                           # real data (MATLAB defaults: 100 restarts, 5 topics), ~15 s
+.venv/bin/python main.py --eval-matlab refs/results                               # evaluate the MATLAB results of the paper
 ```
 
 - `tests/test_matlab_equivalence.py` contains line-by-line numpy re-implementations of `calc_lkh`, `calc_segments`, `plsa/estep/mstep`,
   `exact_prob` and `LoadGaze`; new ported code should get the same kind of test (reference = MATLAB semantics, not the Python code).
-- MATLAB is not available in the dev environment; "equivalence" = agreement with those re-implementations, not with MATLAB output (see T6).
-- Runtime: 111 sessions, 100 restarts, K = 3: ~50 s per (topic, spe/all) on 8 cores.
+- MATLAB is not available in the dev environment. `refs/` (git-ignored, provided by the user) holds the MATLAB scripts and outputs
+  used for the paper (`gazedata.mat`, `lkh_win_5.mat`, `segsessions.mat`, `task_att.mat`, `results/p_*_topicK.mat`, `results/cor.mat`, ...);
+  `tests/test_refs.py` compares against them. Only one raw gaze session is in `refs/` (`for_plot_org_data/experiment`, = `sample_data`).
+- Runtime: 111 sessions, 100 restarts, K = 1..5, spe + all: ~13 s in total on this machine.
 - `python-ver/results/`, `aspectmodel/`, `.venv` are git-ignored; do not commit outputs.
 - Line endings: all python-ver files are LF.
 
@@ -85,10 +89,36 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt   # numpy is 
 - `main.py` is the `main_mask.m` pipeline; old broken `main.py` (random sessions, wrong call) removed.
 - E-step/M-step vectorized (identical iterations / log-likelihood / parameters to the loop version, ~50x faster).
 - `tests/test_matlab_equivalence.py` added.
+- T1: evaluation ported (`src/models/evaluation.py`; matching visits `perms(1:K)` order so ties are broken as in MATLAB;
+  "no comparison" uses the exact `max == 1/n_task` test as MATLAB). Tests: `tests/test_evaluation.py` (synthetic, MATLAB references) and `tests/test_refs.py`.
+- `main.learn_aspects` crashed on real data when saving `segsessions.npz` (`np.array(list, dtype=object)` with equal first dimensions); fixed with `_object_array`.
+- Verified on `refs/` (real data, 111 sessions): `lkh_ses` (max diff 1e-17), `seqmask` and `session_all` (exact), 4 sessions without AOF;
+  the MATLAB `p_spe_topic3` gives paper Table 2 and 93/111 = 83.8 %; `cor.mat` (CalcSim) is reproduced.
+  Python training (seed 0): spe K=3 log-likelihood -13249.52 (MATLAB -13248.47), Table 2 except one task-2 session (accuracy 82.9 %).
+- `GazeDataReader.load_session_from_files` on the raw session of `refs/` equals `gazedata.mat` usr 2 / task 1 (`f`, `dur`).
 
-## 6. Open tasks (suggested order: T1, T2, T6, then T3-T5)
+## 6. Open tasks (suggested order: T7, T2 (+ H1), then T3-T5)
 
-### T1. Port the evaluation (matching, cosine similarity, task estimation)  - highest value
+### T7. Close the gap between Python and MATLAB training (remaining part of T6)
+- Python spe K=3 ends ~1 below MATLAB in log-likelihood and differs in one session. Candidates: random init (MATLAB parfor streams) and the loose
+  relative criterion `lim = 1e-4` (Python stopped after 13 iterations, MATLAB after 21).
+- Deterministic check: start the Python E/M-steps from the MATLAB `p` and compare with MATLAB's `L` (note: `L(end)` is the log-likelihood of the
+  parameters *before* the last M-step). Then agree on an acceptance criterion with the user (e.g. Table 2 within +-1 session).
+
+### H1. `LoadGaze.m` drops samples with only the left eye missing (decision: FIX in Python)
+- `x(x(:,1)==-1, 2) = x(x(:,1)==-1, 1)` runs after column 1 was filled, so it only touches rows where both eyes are -1; a missing *left* eye
+  (column 2) is averaged as (x_R - 1)/2 < 0 and the sample becomes invalid. `gaze_reader.gaze_to_items` reproduces this (24 samples in `sample_data`).
+- Fix both directions; update `ml_load_gaze` / `test_gaze_reader_matches_loadgaze` to the fixed specification. The MATLAB-compatible result
+  equals `gazedata.mat` (usr 2 / task 1); after the fix the reader no longer matches `gazedata.mat` (the `--mat` pipeline is unaffected).
+  Its effect on the paper results cannot be measured (only one raw session). Column order right/left is from the docstrings only.
+- Also: targets outside 1..12 (x or y exactly 1.0) are silently mapped to KB value 0 (MATLAB errors); mark them invalid instead. Not present in `refs/`.
+
+### Notes on `refs/`
+- `cor.mat` was computed before `p_spe_topic5` / `p_all_topic4` were reordered by `calc_matching.m` (same values, permuted columns).
+- `calc_matching.m` is not idempotent for K >= 5 (ties among the unmatched aspects are resolved in `perms` order).
+- `segsessions.mat` has thr = 0.03, win = 5; session 1 contains every value, so the `N_value` of `calc_segments.m:8` (session 1 only) is harmless here.
+
+### T1. (DONE, see section 5) Port the evaluation - original notes kept for reference
 Where: new module (e.g. `src/models/evaluation.py`) + an option/script that runs it on `main.learn_aspects` results.
 Reference: `calc_matching.m`, `CalcEval.m`, `CalcSim.m`, `plot_conf_matrix.m`, `plot_sim.m`, `plot_eval_AoF.m`.
 - `giventask`: 3x15 binary matrix from section 3 (or load `task_att.mat` if the user provides it).
@@ -140,7 +170,7 @@ Where: `src/models/plsa.py` `train_multiple_runs`, `train_standard_plsa`; `FourL
   sequence (not an AOF mask) to `fit`; `test_actual_data.py` / `test_likelihood_convergence.py` depend on `load_all_sessions` (T2). Fix or delete; they do not test MATLAB equivalence.
 - `gaze_reader.main_read_gaze_data` uses `GazeDataReader("../../..")` as base path.
 
-### T6. End-to-end verification against real MATLAB output
+### T6. (mostly DONE with `refs/`, see section 5 and T7) End-to-end verification against real MATLAB output
 - Only synthetic data (multi-session) and one real session (`sample_data/`, gaze -> AOF mask looks right: CPU-high and memory-large rows lit for task 1) were checked.
 - Needs from the user: `gazedata.mat` (111 sessions) and, ideally, MATLAB's `lkh_win_5.mat`, `segsessions.mat`, `results/p_*_topicK.mat`.
   Compare `lkh_ses`, `seqmask` exactly; compare learned aspects statistically (random init) via T1 metrics.
@@ -149,8 +179,9 @@ Where: `src/models/plsa.py` `train_multiple_runs`, `train_standard_plsa`; `FourL
 
 ## 7. Decisions needed from the user
 
-- D1. AOF threshold comparison: keep MATLAB `>=` (current) or follow the paper `>`?
-- D2. Provide `task_att.mat` (or confirm the `giventask` vectors in section 3).
+- D1. AOF threshold `>=` vs `>`: irrelevant for this data (phi_k = 1/3 for every value, count/5 never equals 1/3); kept `>=`.
+- D2. Resolved: `refs/task_att.mat`.
 - D3. Add a `.gitattributes` (`python-ver/** text eol=lf`) to keep LF on Windows?
 - D4. Stale scripts in T5: fix or delete?
-- D5. Is MATLAB output (T6) available for comparison?
+- D5. Resolved: `refs/` (git-ignored, not to be committed).
+- D6. Acceptance criterion for Python training vs MATLAB (T7).
