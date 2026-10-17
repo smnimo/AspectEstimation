@@ -179,3 +179,69 @@ def format_summary(evaluation: Dict, n_task: int = 3) -> List[str]:
                 lines.append(f"[{tag}] topic {K}: accuracy = {r['accuracy']:.3f}, confusion matrix "
                              f"(rows: task, last column: no comparison) =\n{r['conf']}")
     return lines
+
+
+def aof_similarities(f_list: List[np.ndarray], semantic_attributes: List[np.ndarray],
+                     session_all: List[np.ndarray], seqmask: List[np.ndarray],
+                     tasks: np.ndarray, giventask: np.ndarray) -> Dict[str, np.ndarray]:
+    """
+    Cosine similarity between the task of each session and its detected attributes-of-focus (plot_eval_AoF.m)
+
+    Four detectors (keys as in distances.mat):
+      'cos_dist_top':  values of the most browsed item
+      'cos_dist_c':    values shared by the two most browsed items ("Comparison")
+      'cos_dist_all':  histogram of all browsed values (sum of session_all)
+      'cos_dist_mset': histogram of the AOF masks (sum of seqmask, "LD"); NaN for a session without AOF
+
+    Args:
+        f_list: browsed grid positions (1..12) of each session (session{s}.f)
+        semantic_attributes: (12 x 5) attribute values of the items in grid order
+        session_all, seqmask: (15 x T) all values / AOF masks of each session
+        tasks: (S,) task of each session (1-based)
+        giventask: (n_task x 15)
+
+    Note:
+        The most browsed items are ordered by MATLAB's stable sort(..., 'descend').
+    """
+    out = {k: np.zeros(len(f_list)) for k in ('cos_dist_c', 'cos_dist_mset', 'cos_dist_top', 'cos_dist_all')}
+
+    def cos(g, v, guard=True):
+        n = np.linalg.norm(v)
+        return g @ v / (n + (n == 0)) if guard else g @ v / n
+
+    for s, f in enumerate(f_list):
+        counts = np.bincount(np.asarray(f, dtype=int), minlength=13)[1:13]
+        order = np.argsort(-counts, kind='stable')
+        aof1, aof2 = semantic_attributes[s][order[0]], semantic_attributes[s][order[1]]
+        idx = np.arange(5) * 3 + aof1 - 1  # (attribute, value of item 1) -> 15-dim index
+        aof = np.zeros(15)
+        aof[idx] = aof1 == aof2
+        top = np.zeros(15)
+        top[idx] = 1
+        g = giventask[tasks[s] - 1] / np.linalg.norm(giventask[tasks[s] - 1])
+        out['cos_dist_c'][s] = cos(g, aof)
+        out['cos_dist_top'][s] = cos(g, top)
+        out['cos_dist_all'][s] = cos(g, np.sum(session_all[s], axis=1))
+        with np.errstate(invalid='ignore'):
+            out['cos_dist_mset'][s] = cos(g, np.sum(seqmask[s], axis=1), guard=False)
+    return out
+
+
+def aof_ttests(dists: Dict[str, np.ndarray]) -> Tuple[List[str], np.ndarray]:
+    """
+    Two-sample t-tests between the detectors (plot_eval_AoF.m, ttest2 with equal variances)
+
+    Sessions with NaN 'cos_dist_mset' (no AOF) are excluded from all detectors, as in MATLAB.
+
+    Returns:
+        (names, p): names = ['cos_dist_c', 'cos_dist_top', 'cos_dist_all', 'cos_dist_mset'] (MATLAB datas order),
+        p (4 x 4) p-values in the upper triangle (zeros elsewhere)
+    """
+    from scipy.stats import ttest_ind
+    names = ['cos_dist_c', 'cos_dist_top', 'cos_dist_all', 'cos_dist_mset']
+    keep = dists['cos_dist_mset'] >= 0
+    data = [dists[n][keep] for n in names]
+    p = np.zeros((4, 4))
+    for i, j in itertools.combinations(range(4), 2):
+        p[i, j] = ttest_ind(data[i], data[j]).pvalue
+    return names, p

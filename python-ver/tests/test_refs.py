@@ -116,6 +116,23 @@ def test_saved_results_are_matched_and_reproduce_table2():
     assert ev['spe'][3]['accuracy'] == pytest.approx(93 / 111)
 
 
+def test_aof_similarities_match_distances_mat(gazedata, step1):
+    """plot_eval_AoF.m: the four detector similarities equal refs/distances.mat"""
+    attrs, seqs = gazedata
+    _, mask, session_all = step1
+    sessions = pipeline.load_gazedata_sessions(os.path.join(REFS, 'gazedata.mat'))
+    assert [s['task'] for s in sessions] == list(evaluation.session_tasks(len(seqs), 3))
+    assert all(sorted(s['session_id'] for s in sessions[u::37]) == [1, 2, 3] for u in range(37))
+    dists = evaluation.aof_similarities([s['f'] for s in sessions], attrs, session_all, mask,
+                                        evaluation.session_tasks(len(seqs), 3), evaluation.GIVENTASK)
+    ref = scipy.io.loadmat(os.path.join(REFS, 'distances.mat'))
+    for name, value in dists.items():
+        assert np.allclose(value, ref[name].ravel(), rtol=0, atol=1e-12, equal_nan=True)
+    assert np.isnan(dists['cos_dist_mset']).sum() == TABLE2[:, -1].sum()  # sessions without AOF
+    names, p = evaluation.aof_ttests(dists)
+    assert p[names.index('cos_dist_top'), names.index('cos_dist_mset')] < 0.01
+
+
 # ------------------------------------------------------------------ training (T7)
 def ml_em_step(sessions, zs, vz):
     """One iteration of plsa.m (estep.m + mstep.m) with loops, independent of FourLayerPLSA"""

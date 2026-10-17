@@ -40,7 +40,9 @@ every value is shared by 4 of the 12 items. A *session* = one participant x one 
 | `train.m` (best of 100 restarts, parfor) | `main.train` (process pool) | OK |
 | `main_mask.m`, `learn_aspects_from_mask.m` | `main.py` (`learn_aspects`, CLI) | OK |
 | `calc_matching.m`, `CalcEval.m`, `CalcSim.m`, `plot_conf_matrix.m` | `src/models/evaluation.py`, `main.py --eval` / `--eval-matlab` | OK (verified on `refs/`) |
-| `plot_*.m` | `src/visualization/plotter.py` | exists, not verified against MATLAB (T8) |
+| `plot_eval_AoF.m` (numbers) | `evaluation.aof_similarities`, `aof_ttests` | OK (equals `refs/distances.mat`) |
+| `plot_L_topic.m`, `plot_conf_matrix.m`, `plot_sim.m`, `plot_sim_task_asp.m`, `plot_eval_AoF.m`, `plot_dur_usr.m`, `plot_org_gaze.m`, `disp_mask_for_paper.m` / `plot_mask_for_paper.m`, `plot_aspect.R` | `src/visualization/plotter.py`, `main.py --plot` | OK (T8; checked visually, smoke tests) |
+| `plot_duration_segmentation_trialID.m`, `disp_mask.m` | - | not ported (exploratory plots) |
 | `confirm_bias.m`, `learn_aspects_from_part.m`, `for_rev2.m`, `test_cor_p.m`, `multi_choose_prob.m` | - | not ported / not needed for the main flow (`multi_choose_prob.m` is NOT `exact_prob`) |
 
 ## 3. Data conventions (easy to get wrong)
@@ -65,7 +67,7 @@ every value is shared by 4 of the 12 items. A *session* = one participant x one 
 ```bash
 cd python-ver
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt   # numpy is not installed system-wide
-.venv/bin/python -m pytest tests -q          # MATLAB-equivalence tests (28 tests, ~6 s; refs tests are skipped without refs/)
+.venv/bin/python -m pytest tests -q          # MATLAB-equivalence tests (31 tests, ~8 s; refs tests are skipped without refs/)
 .venv/bin/python main.py --demo --train-num 5 --max-topics 3 --savedir /tmp/res   # smoke test, synthetic data
 .venv/bin/python main.py --mat refs/gazedata.mat --eval                           # real data (MATLAB defaults: 100 restarts, 5 topics), ~15 s
 .venv/bin/python main.py --eval-matlab refs/results                               # evaluate the MATLAB results of the paper
@@ -103,6 +105,15 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt   # numpy is 
   fallbacks now raise errors (`calc_segments` default `N_value` / dummy likelihoods, built-in fake KB of `load_knowledge_base`, `None` returned by
   `load_session_from_files`). `calc_segments` keeps `N_value` over all sessions (documented; equal to MATLAB on the paper data).
   `exact_prob`'s renormalization of invalid `prob` is kept (irrelevant for valid input).
+- T8: `plotter.py` rewritten, one function per MATLAB figure (the old functions were mostly not ports: e.g. `plot_evaluation_metrics`
+  drew accuracy/precision/recall/F1 instead of `plot_eval_AoF.m`, `plot_similarity_analysis` required matrices that MATLAB never computes);
+  `main.py --plot` saves all figures. `plot_eval_AoF.m`'s numbers are in `evaluation.aof_similarities` / `aof_ttests` and equal
+  `refs/distances.mat` (4 NaN = sessions without AOF; Top vs LD p = 0.001). `plot_aspect.R`: `refs/results/spe3.pdf` shows vz,
+  `spe3_2.pdf` shows vz x 2 (second half of the hand-edited `Akq_*.csv`); corrplot colors span [-1, 1]. Tests: `tests/test_plotter.py`.
+  `refs/gazedata.mat` sessions contain `session_id` (and `selected`), which the shipped `ReadwithTimestamp.m` does not set;
+  `load_all_sessions` now stores `session_id` = order of the session for the user (assumed `mod(count, 4) + 1`; consistent with
+  `gazedata.mat` being a permutation of 1..3 per user, the mapping itself could not be checked with one raw session).
+  `main.load_gazedata_sessions` reads the session structs. seaborn / pandas removed from requirements (unused).
 - T5 / D4: README rewritten; stale scripts deleted (`main_four_layer.py`, `test_four_layer.py`, `test_with_arguments.py`, `test_actual_data.py`,
   `inspect_results.py`, `test_comprehensive_visualization.py`, `test_likelihood_convergence.py`: mock data, nonexistent result files or removed APIs;
   their roles are covered by `main.py` and `tests/`). `scikit-learn` removed from requirements (unused).
@@ -120,7 +131,9 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt   # numpy is 
 
 ## 6. Open tasks
 
-### T8. Verify the visualization against the MATLAB plot scripts
+None of T1-T8 remain. Possible next steps: D3 (`.gitattributes`), porting the exploratory scripts listed below if needed.
+
+### T8. (DONE, see section 5) Verify the visualization against the MATLAB plot scripts - original notes
 Where: `src/visualization/plotter.py` (`AspectPlotter`, not covered by tests). The functions mostly display matrices passed in by the caller,
 and several of them are not faithful ports: `plot_aspect_matrices` draws the same `vz` in its "All Data" and "MSET" rows and uses `KB.T`
 (12 x 5) as "ground truth" (should be `giventask`); `plot_likelihood_comparison` reads `p_*_topicK.npz` (compatible with `main.py`).

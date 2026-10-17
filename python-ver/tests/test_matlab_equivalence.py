@@ -300,6 +300,7 @@ def test_load_all_sessions(tmp_path):
     assert data['n_usr'] == 2
     assert sorted(data['session']) == [(u, t) for u in (1, 2) for t in (1, 2, 3)]
     assert data['session'][(1, 2)]['name'] == 'u1s1' and data['session'][(2, 1)]['name'] == 'u2s3'
+    assert data['session'][(1, 2)]['session_id'] == 1 and data['session'][(2, 1)]['session_id'] == 3
     single = reader.load_session_from_files(csv, os.path.join(SAMPLE_DIR, '170116024150092.list'), 1, 1)
     for s in data['session'].values():
         assert np.array_equal(s['f'], single['f']) and np.allclose(s['dur'], single['dur'])

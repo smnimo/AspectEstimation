@@ -8,6 +8,32 @@ import os
 from typing import Dict, Any
 
 
+def gaze_xy(gaze_data: np.ndarray):
+    """
+    Gaze position averaged over both eyes (LoadGaze.m), normalized 0..1; -1 where both eyes are missing
+
+    A missing eye (-1) is filled from the other one in both directions.
+    NOTE: intentional difference from LoadGaze.m, whose second line
+      x(x(:, 1)==-1, 2) = x(x(:, 1)==-1, 1)
+    runs after column 1 has been filled and therefore never fills a missing column 2 (left eye):
+    such samples become (x_R - 1) / 2 < 0 and are dropped in MATLAB.
+
+    Args:
+        gaze_data: (timepoints x 5) timestamp, right_x, right_y, left_x, left_y
+
+    Returns:
+        (x, y) arrays of length timepoints
+    """
+    x = gaze_data[:, [1, 3]].astype(float)  # right_x, left_x
+    y = gaze_data[:, [2, 4]].astype(float)  # right_y, left_y
+    for v in (x, y):
+        right_missing = v[:, 0] == -1
+        left_missing = v[:, 1] == -1
+        v[right_missing, 0] = v[right_missing, 1]
+        v[left_missing, 1] = v[left_missing, 0]
+    return np.mean(x, axis=1), np.mean(y, axis=1)
+
+
 class GazeDataReader:
     """
     Main data reader class that replicates ReadwithTimestamp.m functionality
@@ -187,39 +213,16 @@ class GazeDataReader:
     
     def gaze_to_items(self, gaze_data: np.ndarray) -> np.ndarray:
         """
-        Convert gaze coordinates to grid positions (1-12) using the exact LoadGaze.m algorithm
+        Convert gaze coordinates to grid positions (1-12) as in LoadGaze.m (with the fixes noted in gaze_xy / below)
         
         Args:
             gaze_data: Gaze tracking data (timepoints × 5: timestamp, right_x, right_y, left_x, left_y)
             
         Returns:
             Grid position sequence (timepoints,) with positions 1-12 or -1 for invalid
-            
-        Exact translation of LoadGaze.m functionality
         """
-        timestamp = gaze_data[:, 0]
-        gaze = gaze_data[:, 1:]
+        x, y = gaze_xy(gaze_data)
         
-        # Extract x and y coordinates (columns 1,3 for x and 2,4 for y)
-        x = gaze[:, [0, 2]]  # right_x, left_x
-        y = gaze[:, [1, 3]]  # right_y, left_y
-        
-        # Handle missing data (-1) by using the other eye (both directions)
-        # NOTE: intentional difference from LoadGaze.m, whose second line
-        #   x(x(:, 1)==-1, 2) = x(x(:, 1)==-1, 1)
-        # runs after column 1 has been filled and therefore never fills a missing column 2 (left eye):
-        # such samples become (x_R - 1) / 2 < 0 and are dropped in MATLAB. Samples with both eyes
-        # missing stay -1 and are invalid in both versions.
-        for v in (x, y):
-            right_missing = v[:, 0] == -1
-            left_missing = v[:, 1] == -1
-            v[right_missing, 0] = v[right_missing, 1]
-            v[left_missing, 1] = v[left_missing, 0]
-
-        # Average the two eyes
-        x = np.mean(x, axis=1)
-        y = np.mean(y, axis=1)
-
         # Grid parameters: 3 rows × 4 columns
         vN = 3  # vertical (rows)
         cN = 4  # horizontal (columns)
@@ -473,6 +476,7 @@ class GazeDataReader:
             if key in sessions:
                 print(f"Warning: session {key} appears twice; {name} overwrites it (as in MATLAB)")
             session['name'] = name
+            session['session_id'] = session_id  # order of the session for this user (1..3), as in gazedata.mat
             sessions[key] = session
 
         self.sessions = sessions

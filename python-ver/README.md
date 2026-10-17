@@ -17,6 +17,8 @@ The MATLAB code is the reference. Step 1, step 2 and the evaluation reproduce th
 | Step 1: attributes-of-focus (AOF) masks | `calc_segments.m` | `src/models/segments.py` (`SegmentCalculator`) |
 | Step 2: pLSA on AOF masks ("spe") and on all values ("all") | `learn_aspects_from_mask.m`, `train.m`, `plsa.m` | `main.learn_aspects`, `main.train`, `src/models/plsa.py` |
 | Evaluation: aspect-task matching, cosine similarity, confusion matrix | `calc_matching.m`, `CalcEval.m`, `plot_conf_matrix.m` | `src/models/evaluation.py`, `main.py --eval` |
+| Evaluation of the detected AOF (All / Top / Comparison / LD) | `plot_eval_AoF.m` | `evaluation.aof_similarities`, `aof_ttests` |
+| Figures | `plot_*.m`, `disp_mask_for_paper.m`, `plot_aspect.R` | `src/visualization/plotter.py`, `main.py --plot` |
 
 Setting: 12 items (laptops, 3 x 4 grid) with 5 attributes (price, screen size, CPU score, memory capacity, weight) of 3 values each,
 3 tasks, 37 participants (111 sessions). Features are 15-dimensional (index = attribute * 3 + value - 1).
@@ -38,8 +40,11 @@ uv venv && uv pip install -r requirements.txt      # or: python3 -m venv .venv &
 # full pipeline (main_mask.m): step 1, step 2 (100 restarts, 1..5 aspects) and evaluation; ~15 s
 .venv/bin/python main.py --mat gazedata.mat --eval --savedir results
 
-# evaluate MATLAB results (p_{spe,all}_topicK.mat)
-.venv/bin/python main.py --eval-matlab refs/results
+# + figures (results/figures/*.png)
+.venv/bin/python main.py --mat gazedata.mat --plot --savedir results
+
+# evaluate MATLAB results (p_{spe,all}_topicK.mat), optionally with figures
+.venv/bin/python main.py --eval-matlab refs/results --plot
 
 # synthetic data (smoke test)
 .venv/bin/python main.py --demo --train-num 5 --max-topics 3 --eval
@@ -47,7 +52,8 @@ uv venv && uv pip install -r requirements.txt      # or: python3 -m venv .venv &
 
 `main.py --help` lists the parameters (window size 5, threshold 0.03, `lim` 1e-4, `--task-att task_att.mat`, ...; defaults are the MATLAB values).
 Outputs in `--savedir`: `segsessions.npz`, `p_{spe,all}_topicK.npz` (`zs`, `vz`, `L`), `Akq_{spe,all}_topicK.csv` and, with `--eval`,
-`evaluation.npz` (matched aspects, cosine similarities, confusion matrix). Training outputs are not overwritten by the matching
+`evaluation.npz` (matched aspects, cosine similarities, confusion matrix and, with `--mat`, the AOF detection similarities
+of `plot_eval_AoF.m`); with `--plot`, `figures/*.png`. Training outputs are not overwritten by the matching
 (unlike `calc_matching.m`).
 
 From Python:
@@ -81,7 +87,19 @@ results = main.learn_aspects(attrs, seqs, savedir='results')
 Intentional differences from MATLAB (details in TODO.md): a missing left eye is filled from the right eye (`LoadGaze.m` drops such samples),
 gaze coordinates equal to 1 belong to the last grid column / row, invalid inputs raise errors instead of producing wrong values.
 
-## Visualization
+## Figures
 
-`src/visualization/plotter.py` (`AspectPlotter`) contains plotting functions ported from the `plot_*.m` scripts. They have not been
-verified against MATLAB yet (TODO.md, T8); for example `plot_aspect_matrices` draws the same matrix in its "All Data" and "MSET" rows.
+`src/visualization/plotter.py` has one function per MATLAB figure; `main.py --plot` saves them to `<savedir>/figures`:
+
+| File | MATLAB | Content |
+|---|---|---|
+| `L_topic.png`, `aspects_{all,spe}.png` | `plot_L_topic.m` | final log-likelihood vs number of aspects; learned aspects and the given tasks |
+| `conf_{spe,all}.png` | `plot_conf_matrix.m` | task estimation (3 aspects), last column = no comparison |
+| `sim.png`, `sim_task_asp.png` | `plot_sim.m`, `plot_sim_task_asp.m` | cosine similarity between tasks and aspects, with / without MET |
+| `aspect_circles_{tag}_topicK[_x2].png` | `plot_aspect.R` | aspects as circles (`_x2`: values x 2, as `refs/results/*_2.pdf`) |
+| `eval_aof.png` (`--mat`) | `plot_eval_AoF.m` | similarity of the detected AOF (All / Top / Comparison / LD) to the task |
+| `dur_usr.png` (`--mat`) | `plot_dur_usr.m` | session durations per participant |
+| `mask_session{17,34,46}.png` | `plot_mask_for_paper.m`, `disp_mask_for_paper.m` | all values and AOF mask of one session |
+| `likelihood_convergence_{all,spe}.png` | - | log-likelihood over EM iterations |
+
+`plotter.plot_org_gaze` (`plot_org_gaze.m`) draws a raw gaze trajectory over the catalog screenshot.

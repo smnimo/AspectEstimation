@@ -1,8 +1,4 @@
 """
 Visualization package for AspectEstimation
-Translates MATLAB plot_*.m functionality to Python
+Translates MATLAB plot_*.m functionality to Python (see plotter.py)
 """
-
-from .plotter import AspectPlotter
-
-__all__ = ['AspectPlotter']
