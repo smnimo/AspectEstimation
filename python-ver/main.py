@@ -255,9 +255,8 @@ def save_figures(ev: Dict, giventask: np.ndarray, histories: Dict[str, Dict[int,
         figs[f'aspects_{tag}'] = plotter.plot_aspects({K: ev[tag][K]['vz'] for K in Ks}, giventask, name)
         figs[f'likelihood_convergence_{tag}'] = plotter.plot_likelihood_convergence(histories[tag], name)
         for K in Ks:
-            if K >= 2:  # refs/results/{spe,all}K.pdf (vz) and {spe,all}K_2.pdf (vz * 2)
+            if K >= 2:  # paper Fig. 9 (refs/results/{spe,all}K.pdf)
                 figs[f'aspect_circles_{tag}_topic{K}'] = plotter.plot_aspect_circles(ev[tag][K]['vz'])
-                figs[f'aspect_circles_{tag}_topic{K}_x2'] = plotter.plot_aspect_circles(ev[tag][K]['vz'], scale=2)
     if 3 in Ks:
         figs['conf_spe'] = plotter.plot_conf_matrix(ev['spe'][3]['conf'], 'Task estimation MSET: confusion matrix')
         figs['conf_all'] = plotter.plot_conf_matrix(ev['all'][3]['conf'], 'Task estimation w/o MSET: confusion matrix')

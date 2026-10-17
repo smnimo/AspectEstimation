@@ -235,19 +235,19 @@ def plot_mask(session_all: np.ndarray, seqmask: np.ndarray, title: str = '') -> 
     return fig
 
 
-def plot_aspect_circles(vz: np.ndarray, scale: float = 1.0) -> plt.Figure:
+def plot_aspect_circles(vz: np.ndarray) -> plt.Figure:
     """
-    Aspects as a circle matrix (plot_aspect.R: corrplot(method = 'circle', col = red-white-blue))
+    Aspects as a circle matrix (plot_aspect.R: corrplot(method = 'circle', col = red-white-blue); paper Fig. 9)
 
     As corrplot with its default is.corr = TRUE: colors span [-1, 1] (non-negative values are white..blue),
     circle area is proportional to |value| on the same absolute scale, the color bar shows [min, max] (cl.lim).
-    refs/results/spe3.pdf shows vz (scale = 1); spe3_2.pdf shows vz * 2 (scale = 2), the second half of
-    the hand-edited Akq_*.csv files that plot_aspect.R reads.
+    The values are plotted as they are, as in the paper (Fig. 9 color bars 0..0.2 / 0..0.33 = max of vz,
+    refs/results/spe3.pdf). The vz * 2 of the hand-edited Akq_*.csv / *_2.pdf files (for visibility) is not used.
 
     Args:
         vz: (15 x K) aspects
     """
-    N = np.asarray(vz) * scale
+    N = np.asarray(vz, dtype=float)
     cmap = LinearSegmentedColormap.from_list('rwb', ['red', 'white', 'blue'], N=200)
     norm = plt.Normalize(-1, 1)
     rows, cols = N.shape

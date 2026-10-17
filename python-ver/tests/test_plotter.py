@@ -40,7 +40,6 @@ def test_plot_functions():
             plotter.plot_dur_usr(rng.random((37, 3)) * 100),
             plotter.plot_mask(mask, mask * (rng.random((15, 30)) < 0.5), 'session'),
             plotter.plot_aspect_circles(vz[3]),
-            plotter.plot_aspect_circles(vz[3], scale=2),
             plotter.plot_likelihood_convergence({1: [-3, -2], 2: [-4, -2, -1.9]})]
     gaze = np.loadtxt(os.path.join(SAMPLE_DIR, '170116024150092.csv'), delimiter=',')
     figs.append(plotter.plot_org_gaze(gaze, plt.imread(os.path.join(SAMPLE_DIR, '170116024150092.jpg'))))

@@ -109,7 +109,9 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt   # numpy is 
   drew accuracy/precision/recall/F1 instead of `plot_eval_AoF.m`, `plot_similarity_analysis` required matrices that MATLAB never computes);
   `main.py --plot` saves all figures. `plot_eval_AoF.m`'s numbers are in `evaluation.aof_similarities` / `aof_ttests` and equal
   `refs/distances.mat` (4 NaN = sessions without AOF; Top vs LD p = 0.001). `plot_aspect.R`: `refs/results/spe3.pdf` shows vz,
-  `spe3_2.pdf` shows vz x 2 (second half of the hand-edited `Akq_*.csv`); corrplot colors span [-1, 1]. Tests: `tests/test_plotter.py`.
+  `spe3_2.pdf` shows vz x 2 (second half of the hand-edited `Akq_*.csv`, for visibility); corrplot colors span [-1, 1].
+  The paper (Fig. 9 color bars 0..0.2 / 0..0.33) uses unscaled vz, so `plot_aspect_circles` plots vz without a factor
+  (the x 2 variant was removed on request). Tests: `tests/test_plotter.py`.
   `refs/gazedata.mat` sessions contain `session_id` (and `selected`), which the shipped `ReadwithTimestamp.m` does not set;
   `load_all_sessions` now stores `session_id` = order of the session for the user (assumed `mod(count, 4) + 1`; consistent with
   `gazedata.mat` being a permutation of 1..3 per user, the mapping itself could not be checked with one raw session).
@@ -131,7 +133,27 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt   # numpy is 
 
 ## 6. Open tasks
 
-None of T1-T8 remain. Possible next steps: D3 (`.gitattributes`), porting the exploratory scripts listed below if needed.
+None of T1-T8 remain. Possible next steps: T9, D3 (`.gitattributes`), porting the exploratory scripts listed below if needed.
+
+### T9. Keep in sync with the planned fixes of matlab-ver (`../matlab-ver/TODO.md`)
+The MATLAB scripts will be corrected for the public release; each fix can create (or remove) a difference to python-ver:
+
+| matlab-ver/TODO.md | python-ver now | When matlab-ver is fixed |
+|---|---|---|
+| A1: paper Fig. 8 (`for_rev2.m`) sums `seqmask{s}(l)` (linear index bug) | not ported | port with the corrected count (`sum(mask[:, t])` or `any`); it will NOT reproduce the paper's Fig. 8 values `[37 20 21 31 28 30 40 36 36 30]` (correct: `[579 779 818 878 802 962 977 919 932 791]` AOF, `[319 360 374 380 354 390 396 377 369 325]` time points; test against refs/segsessions.mat) |
+| P2: AOF rule `>=` (code) vs `>` (paper) | `>=` (`segments.py`) | change both together; no numeric effect on this data (phi = 1/3) |
+| B3: `session_id` not set by `ReadwithTimestamp.m` | `session_id = mod(count, 4) + 1` (assumed) | use the same definition; check with more raw sessions if they become available |
+| B5: `plot_aspect.R` x 2 factor, hand-edited CSV | unscaled vz, from `p_*` / `evaluation.npz` | none |
+| B6: `segsessions.mat` cache | always recomputed | none |
+| C1, C2 (H1, x == 1) | fixed | python and MATLAB agree again on raw data; then compare `gaze_reader` with the fixed `LoadGaze.m` (the `matlab_bug=True` reference documents the old behavior) |
+| C3: `N_value` from session 1 | all sessions | none |
+| C6, C7: `lim = 1e-4`, no seed | same `lim`, seeded restarts (`--seed`) | if `lim` changes, update the defaults (`main.py`, `FourLayerPLSA.fit`) and re-check D6 |
+| C8: `calc_matching.m` overwrites results, not idempotent | matching in `evaluate`, outputs not overwritten; same tie-breaking (`perms` order) | none, unless the tie-breaking changes |
+| C9: "no comparison" by `val == 1/n_task` | same rule | if MATLAB switches to "no AOF column", switch too (identical results on this data) |
+| C10: `CalcEval` counts sessions without AOF (aspect 1) in `cortop` | same | if they are excluded in MATLAB, exclude them in `evaluation.calc_eval` (changes mean cortop) |
+| C13: `plot_sim.m` error bar = variance | same | follow (std) |
+| C14: NaN `cos_dist_mset` filtered implicitly | `aof_ttests` / `plot_eval_aof` filter with `>= 0` as MATLAB | none |
+| D1: mask figures with hard-coded sessions 17, 34, 46 | `save_figures` uses the same sessions | follow if the selection becomes a parameter |
 
 ### T8. (DONE, see section 5) Verify the visualization against the MATLAB plot scripts - original notes
 Where: `src/visualization/plotter.py` (`AspectPlotter`, not covered by tests). The functions mostly display matrices passed in by the caller,
