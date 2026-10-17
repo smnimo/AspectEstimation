@@ -6,14 +6,17 @@ Translated from matlab-ver/main_mask.m (calc_lkh.m + learn_aspects_from_mask.m):
   1st step: likelihood-based short-term analysis -> AOF masks   (calc_lkh, calc_segments)
   2nd step: pLSA on the AOF masks ("spe") and, for comparison, on all attribute values ("all")
 
+Evaluation (calc_matching.m, CalcSim.m, plot_conf_matrix.m) with --eval, or on MATLAB results with --eval-matlab.
+
 Usage:
   python main.py --mat ../gazedata.mat          # gazedata.mat made by ReadwithTimestamp.m
+  python main.py --mat ../gazedata.mat --eval   # + matching, cosine similarity, confusion matrix
+  python main.py --eval-matlab refs/results     # evaluate MATLAB p_{spe,all}_topicK.mat
+  python main.py --mat ../gazedata.mat --plot   # + figures of the plot_*.m scripts in results/figures
   python main.py --demo --train-num 5           # synthetic data (smoke test)
 """
 
 import argparse
-import contextlib
-import io
 import os
 import sys
 import time
@@ -25,6 +28,7 @@ import numpy as np
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'src'))
 
 from data.data_loader import LikelihoodCalculator
+from models import evaluation
 from models.plsa import FourLayerPLSA
 from models.segments import SegmentCalculator, SessionProcessor
 
@@ -47,6 +51,29 @@ def load_gazedata_mat(path: str) -> Tuple[List[np.ndarray], List[np.ndarray]]:
         return out
 
     return to_list(data['semantic_attributes']), to_list(data['semantic_attribute_seq'])
+
+
+def load_gazedata_sessions(path: str) -> List[Dict]:
+    """
+    Load the session structs of a MATLAB gazedata.mat in cell(:) order (column-major)
+
+    Returns:
+        list of dicts with the fields present in the file (f, dur, list, task, usr, totalduration,
+        session_id, candidate, selected; scalars as int / float, vectors as 1-D arrays)
+    """
+    import scipy.io
+    cells = scipy.io.loadmat(path)['session'].flatten(order='F')
+    out = []
+    for c in cells:
+        d = {}
+        for name in c.dtype.names:
+            v = np.asarray(c[name][0, 0]).ravel()
+            d[name] = v[0].item() if v.size == 1 and name not in ('f', 'dur', 'list') else v
+        for name in ('f', 'list', 'task', 'usr', 'session_id'):
+            if name in d:
+                d[name] = np.asarray(d[name]).astype(int) if np.ndim(d[name]) else int(d[name])
+        out.append(d)
+    return out
 
 
 def from_reader_sessions(data: Dict) -> Tuple[List[np.ndarray], List[np.ndarray]]:
@@ -105,10 +132,7 @@ def calc_lkh(semantic_attributes: List[np.ndarray], semantic_attribute_seq: List
 def _train_once(args):
     sessions, n_topics, lim, max_itr, seed = args
     np.random.seed(seed)
-    model = FourLayerPLSA(n_topics)
-    with contextlib.redirect_stdout(io.StringIO()):
-        params, history = model.fit(sessions, None, lim, max_itr)
-    return params, history
+    return FourLayerPLSA(n_topics).fit(sessions, lim, max_itr)
 
 
 def train(sessions: List[np.ndarray], n_topics: int, lim: float, train_num: int,
@@ -126,6 +150,14 @@ def train(sessions: List[np.ndarray], n_topics: int, lim: float, train_num: int,
     return max(results, key=lambda r: r[1][-1])
 
 
+def _object_array(arrays: List[np.ndarray]) -> np.ndarray:
+    """1-D object array of per-session arrays (like a MATLAB cell); np.array(..., dtype=object)
+    fails or stacks when the arrays share their first dimension"""
+    out = np.empty(len(arrays), dtype=object)
+    out[:] = arrays
+    return out
+
+
 def learn_aspects(semantic_attributes: List[np.ndarray], semantic_attribute_seq: List[np.ndarray],
                   win_size: int = 5, thr: float = 0.03, max_topics: int = 5,
                   train_num: int = 100, lim: float = 1e-4, max_itr: int = 1000,
@@ -140,8 +172,7 @@ def learn_aspects(semantic_attributes: List[np.ndarray], semantic_attribute_seq:
     seglabel, seqmask = SegmentCalculator(win_size, thr).calc_segments(
         lkh_ses, semantic_attributes, semantic_attribute_seq, win_size, thr)
     processor = SessionProcessor()
-    with contextlib.redirect_stdout(io.StringIO()):
-        session_all = processor.create_session_all(semantic_attribute_seq, N_value)
+    session_all = processor.create_session_all(semantic_attribute_seq, N_value)
     session_spe = processor.remove_empty_columns(seqmask)
 
     n_aof = sum(m.shape[1] for m in session_spe)
@@ -150,8 +181,8 @@ def learn_aspects(semantic_attributes: List[np.ndarray], semantic_attribute_seq:
 
     os.makedirs(savedir, exist_ok=True)
     np.savez(os.path.join(savedir, 'segsessions.npz'),
-             seglabel=np.array(seglabel, dtype=object), seqmask=np.array(seqmask, dtype=object),
-             session_all=np.array(session_all, dtype=object), win_size=win_size, thr=thr)
+             seglabel=_object_array(seglabel), seqmask=_object_array(seqmask),
+             session_all=_object_array(session_all), win_size=win_size, thr=thr)
 
     results = {'seglabel': seglabel, 'seqmask': seqmask, 'session_all': session_all,
                'spe': {}, 'all': {}}
@@ -169,11 +200,125 @@ def learn_aspects(semantic_attributes: List[np.ndarray], semantic_attribute_seq:
     return results
 
 
+# ---------------------------------------------------------------- evaluation
+def run_evaluation(models: Dict[str, Dict[int, Tuple[np.ndarray, np.ndarray]]],
+                   giventask: np.ndarray, savedir: str, aof: Dict[str, np.ndarray] = None) -> Dict:
+    """
+    Evaluate models[tag][K] = (vz, zs) and save the matched results to savedir/evaluation.npz
+
+    Unlike calc_matching.m, the training outputs (p_*_topicK) are not overwritten.
+    aof (evaluation.aof_similarities, plot_eval_AoF.m) is printed and saved as well when given.
+    """
+    ev = evaluation.evaluate(models, giventask)
+    for line in evaluation.format_summary(ev, giventask.shape[0]):
+        print(line)
+    arrays = {f'{tag}_topic{K}_{name}': value
+              for tag, by_topic in ev.items() for K, r in by_topic.items() for name, value in r.items()}
+    if aof is not None:
+        names, p = evaluation.aof_ttests(aof)
+        print("AOF detection, mean cosine similarity (sessions with AOF): " +
+              ", ".join(f"{n} = {np.nanmean(aof[n][aof['cos_dist_mset'] >= 0]):.3f}" for n in names))
+        print(f"  t-test p-values (upper triangle, order {names}):\n{np.round(p, 4)}")
+        arrays.update(aof)
+        arrays['aof_ttest_p'] = p
+    os.makedirs(savedir, exist_ok=True)
+    np.savez(os.path.join(savedir, 'evaluation.npz'), **arrays)
+    return ev
+
+
+def save_figures(ev: Dict, giventask: np.ndarray, histories: Dict[str, Dict[int, List[float]]], figdir: str,
+                 aof: Dict[str, np.ndarray] = None, sessions: List[Dict] = None,
+                 session_all: List[np.ndarray] = None, seqmask: List[np.ndarray] = None) -> List[str]:
+    """
+    Figures of plot_L_topic.m, plot_conf_matrix.m, plot_sim.m, plot_sim_task_asp.m, plot_aspect.R and,
+    with session data, plot_eval_AoF.m, plot_dur_usr.m, plot_mask_for_paper.m (sessions 17, 34, 46)
+
+    Args:
+        ev: output of evaluation.evaluate (matched aspects)
+        histories: histories[tag][K] = log-likelihood history
+        aof, sessions, session_all, seqmask: optional session data (sessions: load_gazedata_sessions)
+
+    Returns:
+        paths of the saved PNG files
+    """
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+    from visualization import plotter
+
+    os.makedirs(figdir, exist_ok=True)
+    figs = {}
+    Ks = sorted(set(ev['spe']) & set(ev['all']))
+    figs['L_topic'] = plotter.plot_L_topic([histories['all'][K][-1] for K in Ks],
+                                           [histories['spe'][K][-1] for K in Ks])
+    for tag, name in (('all', 'all'), ('spe', 'MSET')):
+        figs[f'aspects_{tag}'] = plotter.plot_aspects({K: ev[tag][K]['vz'] for K in Ks}, giventask, name)
+        figs[f'likelihood_convergence_{tag}'] = plotter.plot_likelihood_convergence(histories[tag], name)
+        for K in Ks:
+            if K >= 2:  # refs/results/{spe,all}K.pdf (vz) and {spe,all}K_2.pdf (vz * 2)
+                figs[f'aspect_circles_{tag}_topic{K}'] = plotter.plot_aspect_circles(ev[tag][K]['vz'])
+                figs[f'aspect_circles_{tag}_topic{K}_x2'] = plotter.plot_aspect_circles(ev[tag][K]['vz'], scale=2)
+    if 3 in Ks:
+        figs['conf_spe'] = plotter.plot_conf_matrix(ev['spe'][3]['conf'], 'Task estimation MSET: confusion matrix')
+        figs['conf_all'] = plotter.plot_conf_matrix(ev['all'][3]['conf'], 'Task estimation w/o MSET: confusion matrix')
+        figs['sim'] = plotter.plot_sim(ev['spe'][3]['cor_task'], ev['all'][3]['cor_task'])
+        figs['sim_task_asp'] = plotter.plot_sim_task_asp(ev['spe'][3]['cor_task'], ev['all'][3]['cor_task'])
+    if aof is not None:
+        figs['eval_aof'] = plotter.plot_eval_aof(aof)
+    if sessions is not None and all('session_id' in s and 'totalduration' in s for s in sessions):
+        dur = np.zeros((max(s['usr'] for s in sessions), 3))
+        for s in sessions:
+            dur[s['usr'] - 1, s['session_id'] - 1] = s['totalduration']
+        figs['dur_usr'] = plotter.plot_dur_usr(dur)
+    if session_all is not None and seqmask is not None:
+        for s in (17, 34, 46):  # MATLAB indices of plot_mask_for_paper.m
+            if s <= len(seqmask):
+                title = (f"participant:{sessions[s - 1]['usr']}, task:{sessions[s - 1]['task']}"
+                         if sessions is not None else f'session {s}')
+                figs[f'mask_session{s}'] = plotter.plot_mask(session_all[s - 1], seqmask[s - 1], title)
+
+    paths = []
+    for name, fig in figs.items():
+        path = os.path.join(figdir, f'{name}.png')
+        fig.savefig(path, dpi=150)
+        plt.close(fig)
+        paths.append(path)
+    print(f"Saved {len(paths)} figures to {figdir}")
+    return paths
+
+
+def load_matlab_models(loaddir: str, max_topics: int = 5) -> Dict[str, Dict[int, Tuple[np.ndarray, np.ndarray]]]:
+    """Load p_{spe,all}_topicK.mat (K = 1..max_topics) saved by learn_aspects_from_mask.m"""
+    models = {}
+    for tag in ('spe', 'all'):
+        models[tag] = {}
+        for K in range(1, max_topics + 1):
+            path = os.path.join(loaddir, f'p_{tag}_topic{K}.mat')
+            if os.path.exists(path):
+                zs, vz, _ = evaluation.load_matlab_result(path)
+                models[tag][K] = (vz, zs)
+    return models
+
+
+def load_matlab_histories(loaddir: str, max_topics: int = 5) -> Dict[str, Dict[int, List[float]]]:
+    """Log-likelihood histories L of p_{spe,all}_topicK.mat"""
+    return {tag: {K: list(evaluation.load_matlab_result(os.path.join(loaddir, f'p_{tag}_topic{K}.mat'))[2])
+                  for K in range(1, max_topics + 1)
+                  if os.path.exists(os.path.join(loaddir, f'p_{tag}_topic{K}.mat'))}
+            for tag in ('spe', 'all')}
+
+
 def main():
     parser = argparse.ArgumentParser(description="AspectEstimation pipeline (main_mask.m)")
     src = parser.add_mutually_exclusive_group(required=True)
     src.add_argument('--mat', type=str, help="gazedata.mat created by ReadwithTimestamp.m")
     src.add_argument('--demo', action='store_true', help="use synthetic data")
+    src.add_argument('--eval-matlab', type=str, metavar='DIR',
+                     help="only evaluate MATLAB results (p_{spe,all}_topicK.mat) in DIR")
+    parser.add_argument('--eval', action='store_true', help="evaluate the learned aspects")
+    parser.add_argument('--plot', action='store_true', help="evaluate and save figures to SAVEDIR/figures")
+    parser.add_argument('--task-att', type=str, default=None,
+                        help="task_att.mat with giventask (default: built-in task-related values)")
     parser.add_argument('--win-size', type=int, default=5)
     parser.add_argument('--thr', type=float, default=0.03)
     parser.add_argument('--max-topics', type=int, default=5)
@@ -184,14 +329,35 @@ def main():
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--savedir', type=str, default='results')
     args = parser.parse_args()
+    giventask = evaluation.load_giventask(args.task_att)
+    figdir = os.path.join(args.savedir, 'figures')
+
+    if args.eval_matlab:
+        ev = run_evaluation(load_matlab_models(args.eval_matlab, args.max_topics), giventask, args.savedir)
+        if args.plot:
+            save_figures(ev, giventask, load_matlab_histories(args.eval_matlab, args.max_topics), figdir)
+        return
 
     if args.demo:
         attrs, seqs = create_demo_data(seed=args.seed)
     else:
         attrs, seqs = load_gazedata_mat(args.mat)
 
-    learn_aspects(attrs, seqs, args.win_size, args.thr, args.max_topics, args.train_num,
-                  args.lim, args.max_itr, args.jobs, args.seed, args.savedir)
+    results = learn_aspects(attrs, seqs, args.win_size, args.thr, args.max_topics, args.train_num,
+                            args.lim, args.max_itr, args.jobs, args.seed, args.savedir)
+    if args.eval or args.plot:
+        models = {tag: {K: (np.stack(r['params']['vz'], axis=1), r['params']['zs'])
+                        for K, r in results[tag].items()} for tag in ('spe', 'all')}
+        sessions, aof = None, None
+        if args.mat:  # session structs (f, totalduration, session_id) for plot_eval_AoF.m / plot_dur_usr.m
+            sessions = load_gazedata_sessions(args.mat)
+            aof = evaluation.aof_similarities([s['f'] for s in sessions], attrs, results['session_all'],
+                                              results['seqmask'], evaluation.session_tasks(len(seqs), giventask.shape[0]),
+                                              giventask)
+        ev = run_evaluation(models, giventask, args.savedir, aof)
+        if args.plot:
+            histories = {tag: {K: r['history'] for K, r in results[tag].items()} for tag in ('spe', 'all')}
+            save_figures(ev, giventask, histories, figdir, aof, sessions, results['session_all'], results['seqmask'])
 
 
 if __name__ == "__main__":
