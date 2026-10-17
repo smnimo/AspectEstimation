@@ -8,8 +8,6 @@ MATLAB code of
 Step 1 ("MSET" in the code, AOF detection in the paper) detects attributes-of-focus by a likelihood-based short-term analysis;
 step 2 learns aspects and per-session interests with pLSA (the pIAF model).
 
-**Status:** the scripts used for the paper (2019) were corrected for this release: the pipeline runs end to end and latent bugs
-were fixed. Changes are summarized in [Changes from the 2019 scripts](#changes-from-the-2019-scripts).
 
 ## Requirements
 
