@@ -259,3 +259,28 @@ def aof_ttests(dists: Dict[str, np.ndarray]) -> Tuple[List[str], np.ndarray]:
     for i, j in itertools.combinations(range(4), 2):
         p[i, j] = ttest_ind(data[i], data[j]).pvalue
     return names, p
+
+
+def aof_temporal_counts(seqmask: List[np.ndarray], n_segments: int = 10) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    AOF per temporal position in the session (paper Fig. 8; for_rev2.m, corrected)
+
+    Time point l (1-based) of a session with T time points falls into segment floor((l - 1) * n_segments / T).
+
+    Args:
+        seqmask: AOF masks (features x T) of all sessions, with the time points without AOF (calc_segments output)
+
+    Returns:
+        (n_aof, n_points): per segment, the total number of AOF (sum of the masks, as the fixed for_rev2.m) and the
+        number of time points with at least one AOF. The 2019 for_rev2.m summed seqmask{s}(l), a linear index into
+        the mask, which gives the values shown in the paper ([37 20 21 31 28 30 40 36 36 30] on refs).
+    """
+    n_aof = np.zeros(n_segments)
+    n_points = np.zeros(n_segments)
+    for mask in seqmask:
+        T = mask.shape[1]
+        segment = (np.arange(T) * n_segments) // T
+        per_time = np.sum(mask, axis=0)
+        np.add.at(n_aof, segment, per_time)
+        np.add.at(n_points, segment, per_time > 0)
+    return n_aof, n_points

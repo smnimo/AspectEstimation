@@ -11,12 +11,14 @@ import os
 import sys
 
 import numpy as np
+import pytest
 from scipy.spatial.distance import pdist, squareform
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.insert(0, os.path.join(ROOT, 'src'))
 
 from models import evaluation  # noqa: E402
+from models.segments import SessionProcessor  # noqa: E402
 
 GT = evaluation.GIVENTASK
 
@@ -62,6 +64,31 @@ def ml_conf(zs, n_usr, n_task, noaof):
         est[noaof[task * n_usr:(task + 1) * n_usr]] = n_task + 1
         conf[task] = np.histogram(est, bins=np.arange(1, n_task + 3) - 0.5)[0]
     return conf
+
+
+def ml_for_rev2(seqmask, buggy=False):
+    """for_rev2.m (B-3, paper Fig. 8): fixed sum(seqmask{s}(:, l)); buggy=True: the 2019 seqmask{s}(l) (linear index)"""
+    maskhist = np.zeros(10)
+    for m in seqmask:
+        L = m.shape[1]
+        flat = m.flatten(order='F')  # MATLAB linear indexing is column-major
+        for l in range(1, L + 1):
+            b = int(np.floor((l - 1) * 10 / L))
+            maskhist[b] += flat[l - 1] if buggy else m[:, l - 1].sum()
+    return maskhist
+
+
+def ml_session_all(seqs, N_value):
+    """fixed learn_aspects_from_mask.m: tmp = seq + offset (cumsum), tmp2(tmp(:, t), t) = 1"""
+    offset = np.concatenate([[0], np.cumsum(N_value)[:-1]])
+    out = []
+    for seq in seqs:
+        tmp = seq + offset[:, None]
+        tmp2 = np.zeros((int(np.sum(N_value)), seq.shape[1]))
+        for t in range(seq.shape[1]):
+            tmp2[tmp[:, t] - 1, t] = 1
+        out.append(tmp2)
+    return out
 
 
 def synthetic_model(K, perm, n_usr=6, seed=0):
@@ -127,3 +154,22 @@ def test_evaluate_layout():
     assert 'conf' in ev['spe'][3] and 'conf' not in ev['spe'][2]
     assert np.array_equal(ev['spe'][3]['perm'], [2, 1, 0])
     assert ev['spe'][3]['cortop'].shape == (18,)
+
+
+def test_aof_temporal_counts():
+    rng = np.random.default_rng(3)
+    masks = [(rng.random((15, T)) < 0.15).astype(float) for T in (1, 3, 7, 10, 23, 40)]
+    n_aof, n_points = evaluation.aof_temporal_counts(masks)
+    assert np.array_equal(n_aof, ml_for_rev2(masks))
+    assert np.array_equal(n_points, ml_for_rev2([(m.sum(0, keepdims=True) > 0).astype(float) for m in masks]))
+
+
+def test_session_all_general_value_ranges():
+    rng = np.random.default_rng(4)
+    N_value = np.array([2, 4, 3])
+    seqs = [np.vstack([rng.integers(1, n + 1, T) for n in N_value]) for T in (5, 9)]
+    out = SessionProcessor().create_session_all(seqs, N_value)
+    assert all(np.array_equal(a, b) for a, b in zip(out, ml_session_all(seqs, N_value)))
+    assert all((o.sum(0) == 3).all() for o in out)
+    with pytest.raises(ValueError):
+        SessionProcessor().create_session_all([np.array([[1], [5], [1]])], N_value)

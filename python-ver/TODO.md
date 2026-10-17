@@ -10,15 +10,13 @@ open items are in section 1.
 
 ## 1. Open tasks (verified against the code on 2026-10-17)
 
-- **O1. Paper Fig. 8 (`for_rev2.m`) is not ported.** Port the corrected count (number of AOF per time point, summed over
-  10 temporal segments of each session) to `evaluation` / `plotter` / `main.py --plot` and test it on `refs/segsessions.mat`:
-  expected `[579 779 818 878 802 962 977 919 932 791]` (the paper's `[37 20 21 31 28 30 40 36 36 30]` comes from a linear-index bug).
-- **O2. `SessionProcessor.create_session_all` hard-codes the offsets +3, +6, +9, +12** (and `main.learn_aspects` raises unless
-  every attribute has 3 values). The fixed `learn_aspects_from_mask.m` uses `offset = [0; cumsum(N_value(1:end-1))]`;
-  generalize the same way and drop the check. No effect on the paper data (5 x 3 values).
+- O1 (paper Fig. 8) and O2 (general `session_all` offsets) are done (section 5).
 - **O3 (D3). `.gitattributes`** (`python-ver/** text eol=lf`) to keep LF on Windows: not added yet (all files are LF now).
 - **O4. Re-check after the first MATLAB run of the fixed matlab-ver.** The `.m` fixes were never executed; if running them
   reveals differences (e.g. `rng(seed + i)` streams, error fixes), update python-ver and section 4.
+- Note: the paper-figure functions keep the paper's layout of 5 attributes x 3 values (`evaluation.GIVENTASK`,
+  `aof_similarities` like the 3 x 5 `AoF` of `plot_eval_AoF.m`, axis labels in `plotter.py`); the pipeline itself
+  (steps 1 and 2, matching, confusion matrix) handles any number of values per attribute.
 - Optional: `plot_duration_segmentation_trialID.m`, `disp_mask.m`, `learn_aspects_from_part.m` / `test_cor_p.m`,
   `confirm_bias.m` are not ported (exploratory / reviewer-response scripts, not needed for the main flow).
 
@@ -47,12 +45,12 @@ CPU score, memory capacity, weight), each with 3 values (1 = low/small/light ...
 | `Set_selected.m` | - | not ported (`selected` is not used elsewhere) |
 | `calc_lkh.m`, `exact_prob.m` | `main.calc_lkh`, `src/data/data_loader.py` `LikelihoodCalculator`, `src/utils/math_utils.py` | OK |
 | `calc_segments.m` | `src/models/segments.py` `SegmentCalculator` | OK |
-| `seqmask(:, sum==0) = []`, `session_all` | `SessionProcessor.remove_empty_columns`, `create_session_all` | OK (O2: 3 values per attribute only) |
+| `seqmask(:, sum==0) = []`, `session_all` | `SessionProcessor.remove_empty_columns`, `create_session_all` | OK |
 | `plsa.m`, `estep.m`, `mstep.m`, `normalize.m`, `train.m` | `src/models/plsa.py` `FourLayerPLSA`, `main.train` | OK |
 | `main_mask.m`, `learn_aspects_from_mask.m`, `make_task_att.m` | `main.py` (`learn_aspects`), `evaluation.GIVENTASK` | OK |
 | `calc_matching.m`, `CalcEval.m`, `CalcSim.m`, `plot_conf_matrix.m`, `plot_eval_AoF.m` | `src/models/evaluation.py`, `main.py --eval` / `--eval-matlab` | OK |
 | `plot_L_topic.m`, `plot_conf_matrix.m`, `plot_sim.m`, `plot_sim_task_asp.m`, `plot_eval_AoF.m`, `plot_dur_usr.m`, `plot_org_gaze.m`, `disp_mask_for_paper.m`, `plot_aspect.R` | `src/visualization/plotter.py`, `main.py --plot` | OK (checked visually, smoke tests) |
-| `for_rev2.m` (Fig. 8) | - | O1 |
+| `for_rev2.m` (Fig. 8, corrected) | `evaluation.aof_temporal_counts`, `plotter.plot_aof_temporal` | OK |
 
 ## 4. Conventions and verification
 
@@ -74,7 +72,7 @@ CPU score, memory capacity, weight), each with 3 values (1 = low/small/light ...
 ```bash
 cd python-ver
 uv venv && uv pip install -r requirements.txt          # or python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
-.venv/bin/python -m pytest tests -q                    # 31 tests, ~8 s (test_refs.py is skipped without refs/)
+.venv/bin/python -m pytest tests -q                    # 34 tests, ~8 s (test_refs.py is skipped without refs/)
 .venv/bin/python main.py --mat refs/gazedata.mat --plot --savedir /tmp/res   # real data, all figures, ~15 s
 .venv/bin/python main.py --eval-matlab refs/results --plot                   # evaluate the MATLAB results of the paper
 .venv/bin/python src/data/gaze_reader.py --timestamp-list ../experiment/timestamp.list --knowledge ../knowledge/knowledge.csv --out gazedata.mat
@@ -101,7 +99,12 @@ uv venv && uv pip install -r requirements.txt          # or python3 -m venv .ven
   unused / diverging code and silent fallbacks removed, stale mock-data scripts deleted, README rewritten, unused dependencies removed.
 - T8 figures: `plotter.py` rewritten (the old functions were mostly not ports), `main.py --plot`; `plot_aspect_circles` plots
   unscaled vz like paper Fig. 9 (the x 2 of the hand-edited 2019 CSVs is not used).
-- T9 sync with the corrected matlab-ver (P2, B3, B5, B6, C1-C3, C6-C10, C13, C14; see `../matlab-ver/TODO.md`), except O1 / O2.
+- T9 sync with the corrected matlab-ver (A1, P2, B3, B5, B6, C1-C4, C6-C10, C13, C14; see `../matlab-ver/TODO.md`).
+- O1 paper Fig. 8: `evaluation.aof_temporal_counts` (number of AOF and of time points with AOF per 10 temporal segments),
+  `plotter.plot_aof_temporal`, printed / saved by `main.py --eval` / `--plot` (`aof_temporal.png`); on refs
+  `[579 779 818 878 802 962 977 919 932 791]`; `test_refs.py` also checks that the 2019 linear-index count gives the paper's values.
+- O2 `create_session_all`: offsets from `cumsum(N_value)` as the fixed `learn_aspects_from_mask.m`, values checked; the
+  3-values-per-attribute check of `main.learn_aspects` was removed.
 
 ## 6. Decisions
 

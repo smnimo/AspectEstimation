@@ -150,6 +150,25 @@ def plot_eval_aof(dists: Dict[str, np.ndarray]) -> plt.Figure:
     return fig
 
 
+def plot_aof_temporal(n_aof: Sequence[float]) -> plt.Figure:
+    """
+    Total number of AOF in each temporal position of the sessions (paper Fig. 8; for_rev2.m, corrected count)
+
+    Args:
+        n_aof: per segment (10 segments of each session), from evaluation.aof_temporal_counts
+    """
+    n = len(n_aof)
+    fig, ax = plt.subplots(figsize=(7, 3.5))
+    ax.plot(range(n), n_aof)
+    ax.set_xticks(range(n))
+    ax.set_xticklabels([f'~{(i + 1) * 100 // n}%' for i in range(n)])
+    ax.set_ylim(0, None)
+    ax.set_xlabel('Temporal position in the session')
+    ax.set_ylabel('The total number of AOF')
+    fig.tight_layout()
+    return fig
+
+
 def plot_dur_usr(dur: np.ndarray, usr_nocomp2: Sequence[int] = (28, 36),
                  usr_nocomp1: Sequence[int] = (1, 3, 6, 18, 23, 35, 37), ylim: float = 160) -> plt.Figure:
     """

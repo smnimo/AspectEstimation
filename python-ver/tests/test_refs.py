@@ -140,6 +140,16 @@ def test_aof_similarities_match_distances_mat(gazedata, step1):
     assert p[names.index('cos_dist_top'), names.index('cos_dist_mset')] < 0.01
 
 
+def test_aof_temporal_counts_fig8(step1):
+    """paper Fig. 8: the 2019 for_rev2.m (linear index) gives the paper's values; the corrected count differs"""
+    import test_evaluation
+    masks = cell_list(scipy.io.loadmat(os.path.join(REFS, 'segsessions.mat'))['seqmask'])
+    assert np.array_equal(test_evaluation.ml_for_rev2(masks, buggy=True), [37, 20, 21, 31, 28, 30, 40, 36, 36, 30])
+    n_aof, n_points = evaluation.aof_temporal_counts(step1[1])
+    assert np.array_equal(n_aof, [579, 779, 818, 878, 802, 962, 977, 919, 932, 791])
+    assert np.array_equal(n_points, [319, 360, 374, 380, 354, 390, 396, 377, 369, 325])
+
+
 # ------------------------------------------------------------------ training (T7)
 def ml_em_step(sessions, zs, vz):
     """One iteration of plsa.m (estep.m + mstep.m) with loops, independent of FourLayerPLSA"""
