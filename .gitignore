@@ -1,5 +1,7 @@
 python-ver/aspectmodel/
-python-ver/refs/
+python-ver/withMSET/refs/
+matlab-ver/withLayout/data/
+matlab-ver/withLayout/result/
 .venv
 
 # Python cache files

@@ -1,6 +1,6 @@
 # AspectEstimation - Python Version
 
-Python port of `matlab-ver`, the code of
+Python port of `matlab-ver/withMSET`, the code of
 
 > Shimonishi & Kawashima (2020), "A Two-step Approach for Interest Estimation from Gaze Behavior in Digital
 > Catalog Browsing", *Journal of Eye Movement Research* 13(1):4.
@@ -28,26 +28,30 @@ Setting: 12 items (laptops, 3 x 4 grid) with 5 attributes (price, screen size, C
 ```bash
 cd python-ver
 uv venv && uv pip install -r requirements.txt      # or: python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+cd withMSET
 ```
+
+The commands below are run from `python-ver/withMSET`. Code shared with `withLayout` (normalization, random restarts,
+circle plots, grouped bar charts, log-likelihood plots) is in `python-ver/common`.
 
 ## Usage
 
 ```bash
 # raw gaze data -> gazedata.mat (ReadwithTimestamp.m)
-.venv/bin/python src/data/gaze_reader.py --timestamp-list ../experiment/timestamp.list \
+../.venv/bin/python src/data/gaze_reader.py --timestamp-list ../experiment/timestamp.list \
     --knowledge ../knowledge/knowledge.csv --out gazedata.mat
 
 # full pipeline (main_mask.m): step 1, step 2 (100 restarts, 1..5 aspects) and evaluation; ~15 s
-.venv/bin/python main.py --mat gazedata.mat --eval --savedir results
+../.venv/bin/python main.py --mat gazedata.mat --eval --savedir results
 
 # + figures (results/figures/*.png)
-.venv/bin/python main.py --mat gazedata.mat --plot --savedir results
+../.venv/bin/python main.py --mat gazedata.mat --plot --savedir results
 
 # evaluate MATLAB results (p_{spe,all}_topicK.mat), optionally with figures
-.venv/bin/python main.py --eval-matlab refs/results --plot
+../.venv/bin/python main.py --eval-matlab refs/results --plot
 
 # synthetic data (smoke test)
-.venv/bin/python main.py --demo --train-num 5 --max-topics 3 --eval
+../.venv/bin/python main.py --demo --train-num 5 --max-topics 3 --eval
 ```
 
 `main.py --help` lists the parameters (window size 5, threshold 0.03, `lim` 1e-4, `--task-att task_att.mat`, ...; defaults are the MATLAB values).
@@ -76,15 +80,15 @@ results = main.learn_aspects(attrs, seqs, savedir='results')
 ## Verification
 
 ```bash
-.venv/bin/python -m pytest tests -q
+../.venv/bin/python -m pytest tests -q
 ```
 
 - `tests/test_matlab_equivalence.py`, `tests/test_evaluation.py`: comparisons with line-by-line re-implementations of the MATLAB code.
-- `tests/test_refs.py`: comparisons with the MATLAB outputs used for the paper in `refs/` (git-ignored; skipped when absent):
+- `tests/test_refs.py`: comparisons with the MATLAB outputs used for the paper in `python-ver/withMSET/refs/` (git-ignored; skipped when absent):
   window likelihoods, AOF masks and `session_all` are identical; the MATLAB results give the paper's Table 2 (accuracy 83.8 %);
   Python training is accepted when at most 2 sessions differ from Table 2.
 
-Python follows the corrected matlab-ver (`../matlab-ver/README.md`, "Changes from the 2019 scripts"); compared with the 2019 scripts used for the paper: a missing left eye
+Python follows the corrected matlab-ver (`../../matlab-ver/withMSET/README.md`, "Changes from the 2019 scripts"); compared with the 2019 scripts used for the paper: a missing left eye
 is filled from the right eye, gaze coordinates equal to 1 belong to the last grid column / row, the AOF rule is `>` (paper),
 sessions without AOF are excluded from `cortop`, aspect matching keeps an already matched order, invalid inputs raise errors.
 None of these change the paper's numbers (Table 2, Fig. 10) on the refs data.

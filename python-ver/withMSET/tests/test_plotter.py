@@ -21,7 +21,7 @@ import main as pipeline  # noqa: E402
 from models import evaluation  # noqa: E402
 from visualization import plotter  # noqa: E402
 
-SAMPLE_DIR = os.path.abspath(os.path.join(ROOT, '..', 'sample_data'))
+SAMPLE_DIR = os.path.abspath(os.path.join(ROOT, '..', '..', 'sample_data'))
 
 
 def test_plot_functions():

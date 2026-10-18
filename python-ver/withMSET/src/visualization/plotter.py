@@ -6,12 +6,18 @@ Each function draws what one MATLAB script draws, from data computed elsewhere
 Call matplotlib.use('Agg') before importing this module when no display is available.
 """
 
+import os
+import sys
 from typing import Dict, List, Optional, Sequence
 
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.colors import LinearSegmentedColormap
-from matplotlib.patches import Circle
+
+# shared with withLayout (python-ver/common)
+_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
+from common.plotting import grouped_bars, plot_likelihood_convergence, plot_matrix_circles  # noqa: E402,F401
 
 ATTRIBUTES = ['price', 'screen', 'CPU', 'memory', 'weight']
 
@@ -75,16 +81,6 @@ def plot_conf_matrix(conf: np.ndarray, name: str) -> plt.Figure:
     return fig
 
 
-def _grouped_bars(ax, Y: np.ndarray, group_labels: List[str], bar_labels: List[str]):
-    """MATLAB bar(Y): one group per row of Y, one bar per column"""
-    n_group, n_bar = Y.shape
-    width = 0.8 / n_bar
-    for j in range(n_bar):
-        ax.bar(np.arange(n_group) + (j - (n_bar - 1) / 2) * width, Y[:, j], width, label=bar_labels[j])
-    ax.set_xticks(range(n_group))
-    ax.set_xticklabels(group_labels)
-
-
 def plot_sim(cor_spe: np.ndarray, cor_all: np.ndarray) -> plt.Figure:
     """
     Correlation between the given tasks and the learned aspects (plot_sim.m, active figure, topic = 3)
@@ -98,7 +94,7 @@ def plot_sim(cor_spe: np.ndarray, cor_all: np.ndarray) -> plt.Figure:
     """
     Y = np.vstack([cor_spe.max(axis=1), cor_all.max(axis=1)])  # [cortt; cortt_a]
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 4))
-    _grouped_bars(ax1, Y, ['with MET', 'without MET'], [f'task {t + 1}' for t in range(Y.shape[1])])
+    grouped_bars(ax1, Y, ['with MET', 'without MET'], [f'task {t + 1}' for t in range(Y.shape[1])])
     ax1.set_title('correlations between given task and learned aspects')
     ax1.set_ylabel('Cosine similarity')
     ax1.set_ylim(0, 1)
@@ -120,7 +116,7 @@ def plot_sim_task_asp(cor_spe: np.ndarray, cor_all: np.ndarray) -> plt.Figure:
     """
     Y = np.vstack([np.diag(cor_all), np.diag(cor_spe)])
     fig, ax = plt.subplots(figsize=(6, 4))
-    _grouped_bars(ax, Y, ['without MET (all)', 'with MET (spe)'], [f'task {t + 1}' for t in range(Y.shape[1])])
+    grouped_bars(ax, Y, ['without MET (all)', 'with MET (spe)'], [f'task {t + 1}' for t in range(Y.shape[1])])
     ax.set_ylabel('Cosine similarity')
     ax.set_ylim(0, 1)
     ax.legend()
@@ -266,41 +262,5 @@ def plot_aspect_circles(vz: np.ndarray) -> plt.Figure:
     Args:
         vz: (15 x K) aspects
     """
-    N = np.asarray(vz, dtype=float)
-    cmap = LinearSegmentedColormap.from_list('rwb', ['red', 'white', 'blue'], N=200)
-    norm = plt.Normalize(-1, 1)
-    rows, cols = N.shape
-    fig, ax = plt.subplots(figsize=(2.5 + 0.6 * cols, 0.5 * rows + 1))
-    for (i, j), v in np.ndenumerate(N):
-        ax.add_patch(Circle((j, i), 0.45 * np.sqrt(min(abs(v), 1)), facecolor=cmap(norm(v)), edgecolor='none'))
-    ax.set_xlim(-0.5, cols - 0.5)
-    ax.set_ylim(rows - 0.5, -0.5)
-    ax.set_aspect('equal')
-    ax.set_xticks(np.arange(cols + 1) - 0.5, minor=True)
-    ax.set_yticks(np.arange(rows + 1) - 0.5, minor=True)
-    ax.grid(which='minor', color='lightgray')
-    ax.tick_params(which='minor', length=0)
-    ax.set_xticks(range(cols))
-    ax.set_xticklabels(range(1, cols + 1))
-    ax.xaxis.tick_top()
-    ax.set_yticks(range(rows))
-    ax.set_yticklabels([f'{ATTRIBUTES[i // 3]} {i % 3 + 1}' for i in range(rows)])
-    vmin, vmax = N.min(), N.max()
-    sm = plt.cm.ScalarMappable(cmap=LinearSegmentedColormap.from_list(
-        'cl', [cmap(norm(vmin)), cmap(norm(vmax))]), norm=plt.Normalize(vmin, vmax))
-    fig.colorbar(sm, ax=ax)
-    fig.tight_layout()
-    return fig
-
-
-def plot_likelihood_convergence(histories: Dict[int, Sequence[float]], title: str = '') -> plt.Figure:
-    """Log-likelihood over EM iterations for each number of aspects (no MATLAB counterpart)"""
-    fig, ax = plt.subplots(figsize=(6, 4))
-    for K, L in sorted(histories.items()):
-        ax.plot(np.arange(1, len(L) + 1), L, label=f'K = {K}')
-    ax.set_xlabel('EM iteration')
-    ax.set_ylabel('log-likelihood')
-    ax.set_title(title)
-    ax.legend()
-    fig.tight_layout()
-    return fig
+    labels = [f'{ATTRIBUTES[i // 3]} {i % 3 + 1}' for i in range(np.asarray(vz).shape[0])]
+    return plot_matrix_circles(vz, labels, relative=False)

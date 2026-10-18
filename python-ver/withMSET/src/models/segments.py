@@ -8,9 +8,11 @@ from typing import List, Dict, Tuple
 import sys
 import os
 
-# Add the parent directory to the path to import utils
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-from utils.math_utils import normalize
+# normalize is shared with withLayout (python-ver/common)
+_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
+from common.math_utils import normalize  # noqa: E402
 
 
 class SegmentCalculator:

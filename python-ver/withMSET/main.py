@@ -20,17 +20,18 @@ import argparse
 import os
 import sys
 import time
-from concurrent.futures import ProcessPoolExecutor
 from typing import Dict, List, Tuple
 
 import numpy as np
 
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'src'))
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # python-ver (common)
 
 from data.data_loader import LikelihoodCalculator
 from models import evaluation
 from models.plsa import FourLayerPLSA
 from models.segments import SegmentCalculator, SessionProcessor
+from common.restarts import run_restarts
 
 
 # ---------------------------------------------------------------- data input
@@ -129,21 +130,14 @@ def calc_lkh(semantic_attributes: List[np.ndarray], semantic_attribute_seq: List
 
 
 # ---------------------------------------------------------------- 2nd step
-def _train_once(args):
-    sessions, n_topics, lim, max_itr, seed = args
-    np.random.seed(seed)
+def _train_once(sessions, n_topics, lim, max_itr):
     return FourLayerPLSA(n_topics).fit(sessions, lim, max_itr)
 
 
 def train(sessions: List[np.ndarray], n_topics: int, lim: float, train_num: int,
           max_itr: int, jobs: int = 1, seed: int = 0) -> Tuple[Dict, List[float]]:
     """Best of train_num random restarts by final log-likelihood (train.m; parfor -> processes)"""
-    tasks = [(sessions, n_topics, lim, max_itr, seed + i) for i in range(train_num)]
-    if jobs > 1:
-        with ProcessPoolExecutor(max_workers=jobs) as ex:
-            results = list(ex.map(_train_once, tasks))
-    else:
-        results = [_train_once(t) for t in tasks]
+    results = run_restarts(_train_once, (sessions, n_topics, lim, max_itr), train_num, jobs, seed)
     results = [r for r in results if r[1]]
     if not results:
         raise RuntimeError("All training runs failed (log-likelihood decreased at the first iteration)")

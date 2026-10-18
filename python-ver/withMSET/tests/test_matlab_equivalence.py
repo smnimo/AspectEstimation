@@ -21,13 +21,12 @@ sys.path.insert(0, os.path.join(ROOT, 'src'))
 sys.path.insert(0, ROOT)
 
 import main as pipeline  # noqa: E402
-from data.data_loader import LikelihoodCalculator  # noqa: E402
+from data.data_loader import LikelihoodCalculator, exact_prob  # noqa: E402
 from data.gaze_reader import GazeDataReader  # noqa: E402
 from models.plsa import FourLayerPLSA, multinomial_probs  # noqa: E402
 from models.segments import SegmentCalculator, SessionProcessor  # noqa: E402
-from utils.math_utils import exact_prob, homogenous_product  # noqa: E402
 
-SAMPLE_DIR = os.path.abspath(os.path.join(ROOT, '..', 'sample_data'))
+SAMPLE_DIR = os.path.abspath(os.path.join(ROOT, '..', '..', 'sample_data'))
 REFS = os.path.join(ROOT, 'refs')
 WIN, THR = 5, 0.03
 
@@ -186,8 +185,8 @@ def test_multinomial_probs_matches_exact_prob():
     assert np.allclose(multinomial_probs(list(P), F), ref, rtol=1e-12, atol=0)
 
 
-def test_homogenous_product_and_allpair_order():
-    assert homogenous_product(3, 5) == 21  # 2019 HomogenousProduct.m: nchoosek(n+m-1, m)
+def test_allpair_order():
+    # allpair3 of the 2019 calc_lkh.m
     expected = np.array([[i, j, WIN - i - j] for i in range(WIN + 1) for j in range(WIN - i + 1)])
     assert np.array_equal(LikelihoodCalculator(WIN).generate_all_combinations(3), expected)
 
