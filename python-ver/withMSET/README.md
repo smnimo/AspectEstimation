@@ -48,7 +48,7 @@ circle plots, grouped bar charts, log-likelihood plots) is in `python-ver/common
 ../.venv/bin/python main.py --mat gazedata.mat --plot --savedir results
 
 # evaluate MATLAB results (p_{spe,all}_topicK.mat), optionally with figures
-../.venv/bin/python main.py --eval-matlab refs/results --plot
+../.venv/bin/python main.py --eval-matlab ../../matlab-ver/withMSET/refs/results --plot
 
 # synthetic data (smoke test)
 ../.venv/bin/python main.py --demo --train-num 5 --max-topics 3 --eval
@@ -84,7 +84,7 @@ results = main.learn_aspects(attrs, seqs, savedir='results')
 ```
 
 - `tests/test_matlab_equivalence.py`, `tests/test_evaluation.py`: comparisons with line-by-line re-implementations of the MATLAB code.
-- `tests/test_refs.py`: comparisons with the MATLAB outputs used for the paper in `python-ver/withMSET/refs/` (git-ignored; skipped when absent):
+- `tests/test_refs.py`: comparisons with the MATLAB outputs used for the paper in `matlab-ver/withMSET/refs/` (git-ignored; skipped when absent):
   window likelihoods, AOF masks and `session_all` are identical; the MATLAB results give the paper's Table 2 (accuracy 83.8 %);
   Python training is accepted when at most 2 sessions differ from Table 2.
 

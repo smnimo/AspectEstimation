@@ -11,7 +11,7 @@ Evaluation (calc_matching.m, CalcSim.m, plot_conf_matrix.m) with --eval, or on M
 Usage:
   python main.py --mat ../gazedata.mat          # gazedata.mat made by ReadwithTimestamp.m
   python main.py --mat ../gazedata.mat --eval   # + matching, cosine similarity, confusion matrix
-  python main.py --eval-matlab refs/results     # evaluate MATLAB p_{spe,all}_topicK.mat
+  python main.py --eval-matlab ../../matlab-ver/withMSET/refs/results   # evaluate MATLAB p_{spe,all}_topicK.mat
   python main.py --mat ../gazedata.mat --plot   # + figures of the plot_*.m scripts in results/figures
   python main.py --demo --train-num 5           # synthetic data (smoke test)
 """
@@ -251,7 +251,7 @@ def save_figures(ev: Dict, giventask: np.ndarray, histories: Dict[str, Dict[int,
         figs[f'aspects_{tag}'] = plotter.plot_aspects({K: ev[tag][K]['vz'] for K in Ks}, giventask, name)
         figs[f'likelihood_convergence_{tag}'] = plotter.plot_likelihood_convergence(histories[tag], name)
         for K in Ks:
-            if K >= 2:  # paper Fig. 9 (refs/results/{spe,all}K.pdf)
+            if K >= 2:  # paper Fig. 9
                 figs[f'aspect_circles_{tag}_topic{K}'] = plotter.plot_aspect_circles(ev[tag][K]['vz'])
     if 3 in Ks:
         figs['conf_spe'] = plotter.plot_conf_matrix(ev['spe'][3]['conf'], 'Task estimation MSET: confusion matrix')

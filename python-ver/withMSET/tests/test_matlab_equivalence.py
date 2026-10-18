@@ -27,7 +27,7 @@ from models.plsa import FourLayerPLSA, multinomial_probs  # noqa: E402
 from models.segments import SegmentCalculator, SessionProcessor  # noqa: E402
 
 SAMPLE_DIR = os.path.abspath(os.path.join(ROOT, '..', '..', 'sample_data'))
-REFS = os.path.join(ROOT, 'refs')
+REFS = os.path.abspath(os.path.join(ROOT, '..', '..', 'matlab-ver', 'withMSET', 'refs'))  # MATLAB outputs of the paper
 WIN, THR = 5, 0.03
 
 

@@ -273,7 +273,7 @@ def aof_temporal_counts(seqmask: List[np.ndarray], n_segments: int = 10) -> Tupl
     Returns:
         (n_aof, n_points): per segment, the total number of AOF (sum of the masks) and the
         number of time points with at least one AOF. The 2019 for_rev2.m summed seqmask{s}(l), a linear index into
-        the mask, which gives the values shown in the paper ([37 20 21 31 28 30 40 36 36 30] on refs).
+        the mask, which gives the values shown in the paper ([37 20 21 31 28 30 40 36 36 30] on the paper's data).
     """
     n_aof = np.zeros(n_segments)
     n_points = np.zeros(n_segments)

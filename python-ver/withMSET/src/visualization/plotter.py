@@ -257,7 +257,7 @@ def plot_aspect_circles(vz: np.ndarray) -> plt.Figure:
     As corrplot with its default is.corr = TRUE: colors span [-1, 1] (non-negative values are white..blue),
     circle area is proportional to |value| on the same absolute scale, the color bar shows [min, max] (cl.lim).
     The values are plotted as they are, as in the paper (Fig. 9 color bars 0..0.2 / 0..0.33 = max of vz,
-    refs/results/spe3.pdf). The vz * 2 of the hand-edited Akq_*.csv / *_2.pdf files (for visibility) is not used.
+    the 2019 R output). The vz * 2 of the hand-edited 2019 Akq_*.csv files (for visibility) is not used.
 
     Args:
         vz: (15 x K) aspects
