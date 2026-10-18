@@ -1,5 +1,5 @@
 """
-Regression tests against the MATLAB outputs used for the paper (python-ver/refs/, not in git).
+Regression tests against the MATLAB outputs used for the paper (matlab-ver/withMSET/refs/, not in git).
 
 Skipped when refs/ is not available.
 
@@ -25,7 +25,7 @@ from models import evaluation  # noqa: E402
 from models.plsa import FourLayerPLSA  # noqa: E402
 from models.segments import SegmentCalculator, SessionProcessor  # noqa: E402
 
-REFS = os.path.join(ROOT, 'refs')
+REFS = os.path.abspath(os.path.join(ROOT, '..', '..', 'matlab-ver', 'withMSET', 'refs'))  # MATLAB outputs of the paper
 RESULTS = os.path.join(REFS, 'results')
 pytestmark = pytest.mark.skipif(not os.path.exists(os.path.join(REFS, 'gazedata.mat')),
                                 reason='refs/ (MATLAB outputs) not found')

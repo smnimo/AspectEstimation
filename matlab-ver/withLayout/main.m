@@ -1,33 +1,28 @@
 clear all
 close all
 
+%%% leave-one-out evaluation (paper 4.2-4.4, Fig. 5-7): learn the aspects from all sessions but one, estimate the
+%%% interests from the first part of that session and predict the gazed regions / selected items of the rest
+%%% input: data/mat/*.mat, data/content.mat, data/experiment/timestamp.list, area_s.mat (make_area.m)
+%%% output: result/{region,item}/MP_attr<attr>_alpha<100 alpha>.mat (mpatk{aspects, ratio}: P@1..3)
+
 %%% load data
 h = './data/mat/'; % place of dataset
 session = struct;
-%load ./sig.mat;
-load ./area_s.mat;
+load ./area_s.mat; % layout effect: gaze frequency of all sessions but one (make_area.m)
 load ./data/content.mat;
 S = 81; % the number of sessions
 
 %%% parameter setting
-%train_num = 1;
 train_num = 100;
 train_lim = 10^(-2);
 est_lim = 10^(-3);
 naspects = [3 : 3 : 12];
-%naspects = [6, 9];
-%naspects = 3;
 
-alpha_num = [0.3, 0.7];
-attr_num = [1, 2, 3];
-%attr_num = 1;
-%type_num = [1, 2]; % 1 : sum, 2 : prod
-type_num = 1;
+alpha_num = [0, 0.5]; % mixture ratio of the layout effect (paper: 0, 0.5; Fig. 6: 0 : 0.1 : 1)
+attr_num = [1, 2, 3]; % 1: semantic (SA), 2: color (AA), 3: both (SA+AA)
 
 for attr = attr_num
-for type = type_num
-%attr = 1;
-%type = 1;
 for alpha = alpha_num
 %% 
 %%% load data
@@ -73,9 +68,9 @@ for topic = naspects
         train_session(s) = [];
         test_session = session(s);
         for s2 = 1 : S - 1
-         	train_session(s2).prv = reg_attr(train_session(s2).content, train_session(s2).item, area_s(:, s)', alpha, attr, type);
+         	train_session(s2).prv = reg_attr(train_session(s2).content, train_session(s2).item, area_s(:, s)', alpha, attr);
         end
-        test_session.prv = reg_attr(test_session.content, test_session.item, area_s(:, s)', alpha, attr, type);
+        test_session.prv = reg_attr(test_session.content, test_session.item, area_s(:, s)', alpha, attr);
         p = train(train_session, topic, train_lim, train_num);
         T = length(test_session.f);
         session_est = test_session;
@@ -99,10 +94,9 @@ end
 %% 
 %%% save
 mpatk = mpatk_r;
-save(sprintf('./result/region/MP_attr%d_type%d_alpha%d', attr, type, alpha * 100), 'mpatk');
+save(sprintf('./result/region/MP_attr%d_alpha%d.mat', attr, round(alpha * 100)), 'mpatk');
 mpatk = mpatk_i;
-save(sprintf('./result/item/MP_attr%d_type%d_alpha%d', attr, type, alpha * 100), 'mpatk');
+save(sprintf('./result/item/MP_attr%d_alpha%d.mat', attr, round(alpha * 100)), 'mpatk');
 
-end
 end
 end

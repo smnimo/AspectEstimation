@@ -11,7 +11,7 @@ Evaluation (calc_matching.m, CalcSim.m, plot_conf_matrix.m) with --eval, or on M
 Usage:
   python main.py --mat ../gazedata.mat          # gazedata.mat made by ReadwithTimestamp.m
   python main.py --mat ../gazedata.mat --eval   # + matching, cosine similarity, confusion matrix
-  python main.py --eval-matlab refs/results     # evaluate MATLAB p_{spe,all}_topicK.mat
+  python main.py --eval-matlab ../../matlab-ver/withMSET/refs/results   # evaluate MATLAB p_{spe,all}_topicK.mat
   python main.py --mat ../gazedata.mat --plot   # + figures of the plot_*.m scripts in results/figures
   python main.py --demo --train-num 5           # synthetic data (smoke test)
 """
@@ -20,17 +20,18 @@ import argparse
 import os
 import sys
 import time
-from concurrent.futures import ProcessPoolExecutor
 from typing import Dict, List, Tuple
 
 import numpy as np
 
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'src'))
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # python-ver (common)
 
 from data.data_loader import LikelihoodCalculator
 from models import evaluation
 from models.plsa import FourLayerPLSA
 from models.segments import SegmentCalculator, SessionProcessor
+from common.restarts import run_restarts
 
 
 # ---------------------------------------------------------------- data input
@@ -129,21 +130,14 @@ def calc_lkh(semantic_attributes: List[np.ndarray], semantic_attribute_seq: List
 
 
 # ---------------------------------------------------------------- 2nd step
-def _train_once(args):
-    sessions, n_topics, lim, max_itr, seed = args
-    np.random.seed(seed)
+def _train_once(sessions, n_topics, lim, max_itr):
     return FourLayerPLSA(n_topics).fit(sessions, lim, max_itr)
 
 
 def train(sessions: List[np.ndarray], n_topics: int, lim: float, train_num: int,
           max_itr: int, jobs: int = 1, seed: int = 0) -> Tuple[Dict, List[float]]:
     """Best of train_num random restarts by final log-likelihood (train.m; parfor -> processes)"""
-    tasks = [(sessions, n_topics, lim, max_itr, seed + i) for i in range(train_num)]
-    if jobs > 1:
-        with ProcessPoolExecutor(max_workers=jobs) as ex:
-            results = list(ex.map(_train_once, tasks))
-    else:
-        results = [_train_once(t) for t in tasks]
+    results = run_restarts(_train_once, (sessions, n_topics, lim, max_itr), train_num, jobs, seed)
     results = [r for r in results if r[1]]
     if not results:
         raise RuntimeError("All training runs failed (log-likelihood decreased at the first iteration)")
@@ -257,7 +251,7 @@ def save_figures(ev: Dict, giventask: np.ndarray, histories: Dict[str, Dict[int,
         figs[f'aspects_{tag}'] = plotter.plot_aspects({K: ev[tag][K]['vz'] for K in Ks}, giventask, name)
         figs[f'likelihood_convergence_{tag}'] = plotter.plot_likelihood_convergence(histories[tag], name)
         for K in Ks:
-            if K >= 2:  # paper Fig. 9 (refs/results/{spe,all}K.pdf)
+            if K >= 2:  # paper Fig. 9
                 figs[f'aspect_circles_{tag}_topic{K}'] = plotter.plot_aspect_circles(ev[tag][K]['vz'])
     if 3 in Ks:
         figs['conf_spe'] = plotter.plot_conf_matrix(ev['spe'][3]['conf'], 'Task estimation MSET: confusion matrix')

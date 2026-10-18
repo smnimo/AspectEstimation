@@ -1,12 +1,12 @@
-function [ prv ] = reg_attr(content, item, layout, alpha, attr, type)
-% [prv, prvt] = reg_attr(content(o), item(o))
+function [ prv ] = reg_attr(content, item, layout, alpha, attr)
+% prv = reg_attr(content, item, layout, alpha, attr)
 %
-% content contains oll items, so num shows layouted items
-% 
-% prv       : probablistic of region R, conditioned by attribute value V, P(r|v) V_num x Region_num
-% content   : object. item-attribute contents table
-% item      : object. number of items layouted, and page
-% rayout    : effect of rayout
+% prv     : P(R_n | V_q) = (1 - alpha) P(I_n | V_q) + alpha P(R_n; phi) (paper Eq. 4), V_num x Region_num
+% content : item attributes of all contents (data/content.mat)
+% item    : itemlist object: displayed items and their layout
+% layout  : effect of the layout P(R; phi), 1 x Region_num (relative gaze frequency, make_area.m)
+% alpha   : mixture ratio
+% attr    : attribute type, 1: semantic (category, calorie, steps), 2: color, 3: both
 
 for i = 1 : item.num
     if attr == 1
@@ -22,11 +22,5 @@ for i = 1 : item.num
 end
 
 effect = repmat(normalize(layout), [size(pvi, 2), 1]);
-if type == 1 % sum
-    pvi(:, sum(pvi)==0) = 1;
-    prv = normalize((1 - alpha) * normalize(pvi', 2) + alpha * effect, 2);
-else % prod
-    prv = normalize(pvi', 1);
-    prv(sum(prv, 2)==0, :) = 1;
-    prv = normalize(prv .* effect, 2);
-end
+pvi(:, sum(pvi)==0) = 1; % a value that no displayed item has: uniform over the items
+prv = normalize((1 - alpha) * normalize(pvi', 2) + alpha * effect, 2);
