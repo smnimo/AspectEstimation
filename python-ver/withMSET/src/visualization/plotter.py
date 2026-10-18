@@ -18,8 +18,21 @@ _ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 from common.plotting import grouped_bars, plot_likelihood_convergence, plot_matrix_circles  # noqa: E402,F401
+from data.knowledge import CATEGORICAL, Attribute  # noqa: E402
 
 ATTRIBUTES = ['price', 'screen', 'CPU', 'memory', 'weight']
+# attributes of the paper (5 attributes x 3 values); the feature axis of the figures follows `attributes`
+PAPER_ATTRIBUTES = [Attribute(name, CATEGORICAL, ['1', '2', '3']) for name in ATTRIBUTES]
+
+
+def _attributes(attributes: Optional[Sequence[Attribute]]) -> Sequence[Attribute]:
+    return PAPER_ATTRIBUTES if attributes is None else attributes
+
+
+def _attribute_ticks(attributes: Sequence[Attribute], gap: int = 0):
+    """Tick positions (one per attribute, as MATLAB: the 2nd row of each block) and names; gap: rows between blocks"""
+    starts = np.concatenate([[0], np.cumsum([a.n_values + gap for a in attributes])[:-1]])
+    return starts + np.minimum(1, [a.n_values - 1 for a in attributes]), [a.name for a in attributes]
 
 
 def plot_L_topic(L_all: Sequence[float], L_spe: Sequence[float]) -> plt.Figure:
@@ -34,15 +47,18 @@ def plot_L_topic(L_all: Sequence[float], L_spe: Sequence[float]) -> plt.Figure:
     return fig
 
 
-def plot_aspects(aspects: Dict[int, np.ndarray], giventask: np.ndarray, name: str) -> plt.Figure:
+def plot_aspects(aspects: Dict[int, np.ndarray], giventask: np.ndarray, name: str,
+                 attributes: Optional[Sequence[Attribute]] = None) -> plt.Figure:
     """
     Learned aspects for each number of aspects and the given tasks (plot_L_topic.m, figures 'all' / 'MSET')
 
     Args:
-        aspects: aspects[K] = vz (15 x K), as cell2mat(p.vz)
-        giventask: (n_task x 15), drawn transposed in the last panel
+        aspects: aspects[K] = vz (features x K), as cell2mat(p.vz)
+        giventask: (n_task x features), drawn transposed in the last panel
         name: figure title ('all' or 'MSET')
+        attributes: attributes of the features (data.knowledge.Knowledge.attributes; default: the paper's)
     """
+    ticks, names = _attribute_ticks(_attributes(attributes))
     Ks = sorted(aspects)
     fig, axes = plt.subplots(1, len(Ks) + 1, figsize=(2 * (len(Ks) + 1), 4))
     for ax, K in zip(axes, Ks):
@@ -55,8 +71,8 @@ def plot_aspects(aspects: Dict[int, np.ndarray], giventask: np.ndarray, name: st
     axes[-1].set_xticks(range(giventask.shape[0]))
     axes[-1].set_xticklabels(range(1, giventask.shape[0] + 1))
     for ax in axes:
-        ax.set_yticks(np.arange(1, 15, 3))
-        ax.set_yticklabels(ATTRIBUTES)
+        ax.set_yticks(ticks)
+        ax.set_yticklabels(names)
     fig.suptitle(name)
     fig.tight_layout()
     return fig
@@ -222,27 +238,33 @@ def plot_org_gaze(gaze_data: np.ndarray, image: Optional[np.ndarray] = None,
     return fig
 
 
-def plot_mask(session_all: np.ndarray, seqmask: np.ndarray, title: str = '') -> plt.Figure:
+def plot_mask(session_all: np.ndarray, seqmask: np.ndarray, title: str = '',
+              attributes: Optional[Sequence[Attribute]] = None) -> plt.Figure:
     """
     All browsed values (top) and AOF mask (bottom) of one session (disp_mask_for_paper.m)
 
-    Gray rows (0.5) separate the 5 attributes.
+    Gray rows (0.5) separate the attributes (default: the 5 attributes x 3 values of the paper).
     """
+    attributes = _attributes(attributes)
+    offsets = np.concatenate([[0], np.cumsum([a.n_values for a in attributes])])
+    ticks, names = _attribute_ticks(attributes, gap=1)
+
     def with_separators(m):
         rows = []
-        for a in range(5):
-            rows.append(m[a * 3:(a + 1) * 3])
-            if a < 4:
+        for a in range(len(attributes)):
+            rows.append(m[offsets[a]:offsets[a + 1]])
+            if a < len(attributes) - 1:
                 rows.append(0.5 * np.ones((1, m.shape[1])))
         return np.vstack(rows)
 
     fig, axes = plt.subplots(2, 1, figsize=(10, 6))
     for ax, m, name in zip(axes, (session_all, seqmask), ('all values', 'attributes-of-focus')):
         # extent: time 1..T as in imagesc
-        ax.imshow(with_separators(m), cmap='gray', aspect='auto', interpolation='nearest',
-                  extent=(0.5, m.shape[1] + 0.5, 18.5, -0.5))
-        ax.set_yticks(np.arange(1, 19, 4))
-        ax.set_yticklabels(ATTRIBUTES)
+        img = with_separators(m)
+        ax.imshow(img, cmap='gray', aspect='auto', interpolation='nearest',
+                  extent=(0.5, m.shape[1] + 0.5, img.shape[0] - 0.5, -0.5))
+        ax.set_yticks(ticks)
+        ax.set_yticklabels(names)
         ax.set_title(name)
     axes[1].set_xlabel('time (browsed item)')
     fig.suptitle(title)
@@ -250,7 +272,7 @@ def plot_mask(session_all: np.ndarray, seqmask: np.ndarray, title: str = '') -> 
     return fig
 
 
-def plot_aspect_circles(vz: np.ndarray) -> plt.Figure:
+def plot_aspect_circles(vz: np.ndarray, attributes: Optional[Sequence[Attribute]] = None) -> plt.Figure:
     """
     Aspects as a circle matrix (plot_aspect.R: corrplot(method = 'circle', col = red-white-blue); paper Fig. 9)
 
@@ -260,7 +282,8 @@ def plot_aspect_circles(vz: np.ndarray) -> plt.Figure:
     the 2019 R output). The vz * 2 of the hand-edited 2019 Akq_*.csv files (for visibility) is not used.
 
     Args:
-        vz: (15 x K) aspects
+        vz: (features x K) aspects
+        attributes: attributes of the features (default: the paper's)
     """
-    labels = [f'{ATTRIBUTES[i // 3]} {i % 3 + 1}' for i in range(np.asarray(vz).shape[0])]
+    labels = [f'{a.name} {label}' for a in _attributes(attributes) for label in a.labels]
     return plot_matrix_circles(vz, labels, relative=False)

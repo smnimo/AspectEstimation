@@ -1,0 +1,14 @@
+price,screen,CPU,memory,weight,color,use
+ordinal,ordinal,ordinal,ordinal,ordinal,categorical,categorical
+2,3,3,3,2,silver,business
+2,2,3,3,3,black,gaming;business
+1,2,2,3,3,white,business
+1,3,1,3,1,silver,travel
+3,3,3,2,3,black,gaming
+3,2,2,2,2,white,business;travel
+3,1,1,2,3,silver,travel
+2,1,1,2,1,black,travel;business
+3,2,3,1,1,white,gaming
+1,1,2,1,2,silver,business
+2,1,2,1,1,black,travel
+1,3,1,1,2,white,gaming;travel

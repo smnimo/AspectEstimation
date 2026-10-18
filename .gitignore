@@ -1,5 +1,5 @@
 python-ver/aspectmodel/
-matlab-ver/withMSET/refs/
+matlab-ver/withLD/refs/
 matlab-ver/withLayout/data/
 matlab-ver/withLayout/result/
 .venv
@@ -56,3 +56,6 @@ Thumbs.db
 *.mat
 *.npz
 *.png
+
+# papers for reference (not distributed)
+papers/

@@ -5,7 +5,7 @@ MATLAB code of
 > Shimonishi & Kawashima (2020), "A Two-step Approach for Interest Estimation from Gaze Behavior in Digital Catalog
 > Browsing", *Journal of Eye Movement Research* 13(1):4. doi: 10.16910/jemr.13.1.4
 
-Step 1 ("MSET" in the code, AOF detection in the paper) detects attributes-of-focus by a likelihood-based short-term analysis;
+Step 1 (AOF detection) detects attributes-of-focus by a likelihood-based short-term analysis;
 step 2 learns aspects and per-session interests with pLSA (the pIAF model).
 
 
