@@ -22,12 +22,28 @@ GIVENTASK[1, [3, 12]] = 1   # task 2: screen = 1, weight = 1
 GIVENTASK[2, [0, 11]] = 1   # task 3: price = 1, memory = 3
 
 
-def load_giventask(path: Optional[str] = None) -> np.ndarray:
-    """giventask (n_task x N) from task_att.mat, or the built-in GIVENTASK if path is None"""
+def load_giventask(path: Optional[str] = None, n_features: Optional[int] = None) -> np.ndarray:
+    """
+    Task-related attribute values (n_task x features)
+
+    Args:
+        path: task_att.mat (variable giventask), or a CSV file with one row per task and one 0/1 column per feature
+            (an optional first row with the feature labels is skipped); None: the built-in GIVENTASK of the paper
+        n_features: expected number of features (checked when given)
+    """
     if path is None:
-        return GIVENTASK.copy()
-    import scipy.io
-    return np.asarray(scipy.io.loadmat(path)['giventask'], dtype=float)
+        g = GIVENTASK.copy()
+    elif path.lower().endswith('.mat'):
+        import scipy.io
+        g = np.asarray(scipy.io.loadmat(path)['giventask'], dtype=float)
+    else:
+        with open(path) as fp:
+            first = fp.readline()
+        skip = 1 if any(c.isalpha() for c in first) else 0
+        g = np.atleast_2d(np.loadtxt(path, delimiter=',', skiprows=skip))
+    if n_features is not None and g.shape[1] != n_features:
+        raise ValueError(f"task-related values have {g.shape[1]} columns, the features are {n_features}")
+    return g
 
 
 def load_matlab_result(path: str) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -195,7 +211,22 @@ def format_summary(evaluation: Dict, n_task: int = 3) -> List[str]:
     return lines
 
 
-def aof_similarities(f_list: List[np.ndarray], semantic_attributes: List[np.ndarray],
+def legacy_item_features(semantic_attributes: List[np.ndarray]) -> List[np.ndarray]:
+    """
+    Item features (items x sum of values, 0/1) of the integer inputs of the paper (semantic_attributes{s}: items x
+    attributes, values 1..N); the number of values of each attribute is the maximum over all sessions
+    """
+    n_values = np.max(np.vstack(semantic_attributes), axis=0)
+    offsets = np.concatenate([[0], np.cumsum(n_values)[:-1]])
+    out = []
+    for attrs in semantic_attributes:
+        f = np.zeros((attrs.shape[0], int(n_values.sum())))
+        f[np.arange(attrs.shape[0])[:, None], offsets + np.asarray(attrs, dtype=int) - 1] = 1
+        out.append(f)
+    return out
+
+
+def aof_similarities(f_list: List[np.ndarray], item_features: List[np.ndarray],
                      session_all: List[np.ndarray], seqmask: List[np.ndarray],
                      tasks: np.ndarray, giventask: np.ndarray) -> Dict[str, np.ndarray]:
     """
@@ -208,11 +239,12 @@ def aof_similarities(f_list: List[np.ndarray], semantic_attributes: List[np.ndar
       'cos_dist_mset': histogram of the AOF masks (sum of seqmask, "LD"); NaN for a session without AOF
 
     Args:
-        f_list: browsed grid positions (1..12) of each session (session{s}.f)
-        semantic_attributes: (12 x 5) attribute values of the items in grid order
-        session_all, seqmask: (15 x T) all values / AOF masks of each session
+        f_list: browsed grid positions (1-based) of each session (session{s}.f)
+        item_features: (items x features) 0/1 values of the displayed items in grid order (data.knowledge.features
+            or legacy_item_features); with several values per attribute, "shared" means present in both items
+        session_all, seqmask: (features x T) all values / AOF masks of each session
         tasks: (S,) task of each session (1-based)
-        giventask: (n_task x 15)
+        giventask: (n_task x features)
 
     Note:
         The most browsed items are ordered by MATLAB's stable sort(..., 'descend').
@@ -224,14 +256,11 @@ def aof_similarities(f_list: List[np.ndarray], semantic_attributes: List[np.ndar
         return g @ v / (n + (n == 0)) if guard else g @ v / n
 
     for s, f in enumerate(f_list):
-        counts = np.bincount(np.asarray(f, dtype=int), minlength=13)[1:13]
+        items = np.asarray(item_features[s])
+        counts = np.bincount(np.asarray(f, dtype=int) - 1, minlength=items.shape[0])[:items.shape[0]]
         order = np.argsort(-counts, kind='stable')
-        aof1, aof2 = semantic_attributes[s][order[0]], semantic_attributes[s][order[1]]
-        idx = np.arange(5) * 3 + aof1 - 1  # (attribute, value of item 1) -> 15-dim index
-        aof = np.zeros(15)
-        aof[idx] = aof1 == aof2
-        top = np.zeros(15)
-        top[idx] = 1
+        top = items[order[0]]
+        aof = top * items[order[1]]
         g = giventask[tasks[s] - 1] / np.linalg.norm(giventask[tasks[s] - 1])
         out['cos_dist_c'][s] = cos(g, aof)
         out['cos_dist_top'][s] = cos(g, top)

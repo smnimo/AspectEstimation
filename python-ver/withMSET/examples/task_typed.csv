@@ -1,0 +1,4 @@
+price 1,price 2,price 3,screen 1,screen 2,screen 3,CPU 1,CPU 2,CPU 3,memory 1,memory 2,memory 3,weight 1,weight 2,weight 3,color silver,color black,color white,use business,use gaming,use travel
+0,0,0,0,0,0,0,0,1,0,0,1,0,0,0,0,0,0,0,0,0
+0,0,0,1,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0
+1,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0

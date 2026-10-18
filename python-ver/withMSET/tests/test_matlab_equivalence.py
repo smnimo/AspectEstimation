@@ -2,8 +2,9 @@
 Equivalence tests between python-ver and matlab-ver.
 
 The reference functions below are line-by-line re-implementations of the MATLAB code
-(calc_lkh.m, calc_segments.m, estep.m / mstep.m / plsa.m, exact_prob.m, LoadGaze.m) written
-with plain numpy / scipy, independent of the code under test.
+(estep.m / mstep.m / plsa.m, exact_prob.m, LoadGaze.m) written with plain numpy / scipy, independent of the
+code under test. Step 1 of python-ver is MSET (models.aof, tests/test_knowledge.py), not the likelihood-based
+detection of calc_lkh.m / calc_segments.m, so it has no MATLAB counterpart here.
 
 Run from python-ver/:  python -m pytest tests -q
 """
@@ -14,21 +15,19 @@ from math import factorial
 
 import numpy as np
 import pytest
-from scipy.stats import multinomial
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.insert(0, os.path.join(ROOT, 'src'))
 sys.path.insert(0, ROOT)
 
 import main as pipeline  # noqa: E402
-from data.data_loader import LikelihoodCalculator, exact_prob  # noqa: E402
+from models.aof import exact_prob  # noqa: E402
 from data.gaze_reader import GazeDataReader  # noqa: E402
 from models.plsa import FourLayerPLSA, multinomial_probs  # noqa: E402
-from models.segments import SegmentCalculator, SessionProcessor  # noqa: E402
+from models.segments import SessionProcessor  # noqa: E402
 
 SAMPLE_DIR = os.path.abspath(os.path.join(ROOT, '..', '..', 'sample_data'))
-REFS = os.path.abspath(os.path.join(ROOT, '..', '..', 'matlab-ver', 'withMSET', 'refs'))  # MATLAB outputs of the paper
-WIN, THR = 5, 0.03
+REFS = os.path.abspath(os.path.join(ROOT, '..', '..', 'matlab-ver', 'withLD', 'refs'))  # MATLAB outputs of the paper
 
 
 # ------------------------------------------------------------------ MATLAB references
@@ -36,36 +35,6 @@ def ml_exact_prob(prob, hist):
     """exact_prob.m: n! * prod(p .^ x ./ x!)"""
     x = np.asarray(hist, float)
     return factorial(int(x.sum())) * np.prod(np.asarray(prob) ** x / np.array([factorial(int(v)) for v in x]))
-
-
-def ml_calc_lkh(attrs, seq, win=WIN):
-    """calc_lkh.m for one session: lkh = 1 except for t = win_size:T (1-based)"""
-    T = seq.shape[1]
-    out = []
-    for att in range(5):
-        p = np.bincount(attrs[:, att], minlength=4)[1:] / attrs.shape[0]
-        lkh = np.ones(T)
-        for t in range(win - 1, T):
-            h = np.bincount(seq[att, t - win + 1:t + 1], minlength=4)[1:]
-            lkh[t] = multinomial.pmf(h, win, p)
-        out.append(lkh)
-    return out
-
-
-def ml_calc_segments(attrs, seq, lkh, win=WIN, thr=THR):
-    """calc_segments.m (looked_att) for one session"""
-    rows = []
-    for att in range(5):
-        p = np.bincount(attrs[:, att], minlength=4)[1:] / attrs.shape[0]
-        looked = np.zeros((3, seq.shape[1]))
-        for t in np.where(lkh[att] < thr)[0]:
-            h = np.bincount(seq[att, t - win + 1:t + 1], minlength=4)[1:]
-            h = h / h.sum()
-            for v in range(3):
-                if h[v] > p[v]:  # fixed calc_segments.m (paper); was >=
-                    looked[v, t - win + 1:t + 1] = 1
-        rows.append(looked)
-    return np.vstack(rows)
 
 
 def ml_plsa(sessions, K, lim=1e-4, itr_max=1000, seed=1):
@@ -154,9 +123,10 @@ def sessions_data():
     return attrs, seqs
 
 
-def own_likelihoods(attrs, seqs):
-    lkh, _ = pipeline.calc_lkh(attrs, seqs, WIN)
-    return lkh
+def own_masks(attrs, seqs):
+    """AOF masks of step 1 (MSET) for the integer inputs"""
+    knowledge, catalogs, seqsets = pipeline.legacy_sets(attrs, seqs)
+    return pipeline.detect_aof(knowledge, catalogs, seqsets)[1]
 
 
 # ------------------------------------------------------------------ tests
@@ -185,36 +155,8 @@ def test_multinomial_probs_matches_exact_prob():
     assert np.allclose(multinomial_probs(list(P), F), ref, rtol=1e-12, atol=0)
 
 
-def test_allpair_order():
-    # allpair3 of the 2019 calc_lkh.m
-    expected = np.array([[i, j, WIN - i - j] for i in range(WIN + 1) for j in range(WIN - i + 1)])
-    assert np.array_equal(LikelihoodCalculator(WIN).generate_all_combinations(3), expected)
-
-
-def test_likelihood_matches_calc_lkh(sessions_data):
-    attrs, seqs = sessions_data
-    lkh = own_likelihoods(attrs, seqs)
-    for s in range(len(seqs)):
-        ref = ml_calc_lkh(attrs[s], seqs[s])
-        for att in range(5):
-            assert np.allclose(lkh[s][att], ref[att], atol=1e-12)
-        # the first window (index win_size-1) must be evaluated
-        assert lkh[s][0][WIN - 1] == pytest.approx(ref[0][WIN - 1])
-
-
-def test_aof_mask_matches_calc_segments(sessions_data):
-    attrs, seqs = sessions_data
-    lkh = own_likelihoods(attrs, seqs)
-    _, masks = SegmentCalculator(WIN, THR).calc_segments(lkh, attrs, seqs, WIN, THR)
-    for s in range(len(seqs)):
-        ref = ml_calc_segments(attrs[s], seqs[s], ml_calc_lkh(attrs[s], seqs[s]))
-        assert np.array_equal(masks[s], ref)
-
-
 def test_remove_empty_columns(sessions_data):
-    attrs, seqs = sessions_data
-    lkh = own_likelihoods(attrs, seqs)
-    _, masks = SegmentCalculator(WIN, THR).calc_segments(lkh, attrs, seqs, WIN, THR)
+    masks = own_masks(*sessions_data)
     cleaned = SessionProcessor().remove_empty_columns(masks)
     assert sum(int((m.sum(0) == 0).sum()) for m in masks) > 0  # the test data has empty columns
     for m, c in zip(masks, cleaned):
@@ -224,9 +166,7 @@ def test_remove_empty_columns(sessions_data):
 
 @pytest.mark.parametrize('K', [1, 3])
 def test_em_matches_plsa_m(sessions_data, K):
-    attrs, seqs = sessions_data
-    lkh = own_likelihoods(attrs, seqs)
-    _, masks = SegmentCalculator(WIN, THR).calc_segments(lkh, attrs, seqs, WIN, THR)
+    masks = own_masks(*sessions_data)
     data = SessionProcessor().remove_empty_columns(masks)
     np.random.seed(1)
     params, hist = FourLayerPLSA(K).fit(data, train_lim=1e-4, max_itr=1000)
@@ -244,7 +184,8 @@ def test_gaze_reader_matches_loadgaze():
     lst = os.path.join(SAMPLE_DIR, '170116024150092.list')
     ref = ml_load_gaze(np.loadtxt(csv, delimiter=','))
     reader = GazeDataReader(base_path='.', knowledge_csv_path=os.path.join(SAMPLE_DIR, 'knowledge.csv'))
-    kb = reader.load_knowledge_base()
+    reader.load_knowledge_base()
+    kb = reader.knowledge_base
     session = reader.load_session_from_files(csv, lst, 1, 1)
     f = ref[:, 0].astype(int)
     assert np.array_equal(session['f'], f)

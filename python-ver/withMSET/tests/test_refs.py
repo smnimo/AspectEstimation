@@ -1,13 +1,11 @@
 """
-Regression tests against the MATLAB outputs used for the paper (matlab-ver/withMSET/refs/, not in git).
+Regression tests against the MATLAB outputs used for the paper (matlab-ver/withLD/refs/, not in git).
 
 Skipped when refs/ is not available.
 
 Run from python-ver/:  python -m pytest tests -q
 """
 
-import contextlib
-import io
 import os
 import sys
 from math import factorial
@@ -23,9 +21,9 @@ sys.path.insert(0, ROOT)
 import main as pipeline  # noqa: E402
 from models import evaluation  # noqa: E402
 from models.plsa import FourLayerPLSA  # noqa: E402
-from models.segments import SegmentCalculator, SessionProcessor  # noqa: E402
+from models.segments import SessionProcessor  # noqa: E402
 
-REFS = os.path.abspath(os.path.join(ROOT, '..', '..', 'matlab-ver', 'withMSET', 'refs'))  # MATLAB outputs of the paper
+REFS = os.path.abspath(os.path.join(ROOT, '..', '..', 'matlab-ver', 'withLD', 'refs'))  # MATLAB outputs of the paper
 RESULTS = os.path.join(REFS, 'results')
 pytestmark = pytest.mark.skipif(not os.path.exists(os.path.join(REFS, 'gazedata.mat')),
                                 reason='refs/ (MATLAB outputs) not found')
@@ -43,13 +41,12 @@ def gazedata():
 
 
 @pytest.fixture(scope='module')
-def step1(gazedata):
-    attrs, seqs = gazedata
-    lkh, N_value = pipeline.calc_lkh(attrs, seqs, 5)
-    _, mask = SegmentCalculator(5, 0.03).calc_segments(lkh, attrs, seqs, 5, 0.03)
-    with contextlib.redirect_stdout(io.StringIO()):
-        session_all = SessionProcessor().create_session_all(seqs, N_value)
-    return lkh, mask, session_all
+def step1():
+    """MATLAB step 1 of the paper (likelihood < 0.03, windows of 5 items): (None, seqmask, session_all) of
+    segsessions.mat; the evaluation and pLSA tests below run on it"""
+    ss = scipy.io.loadmat(os.path.join(REFS, 'segsessions.mat'))
+    assert ss['thr'].item() == 0.03 and ss['win_size'].item() == 5
+    return None, cell_list(ss['seqmask']), cell_list(ss['session_all'])
 
 
 def test_giventask_matches_task_att():
@@ -62,25 +59,27 @@ def test_session_order(gazedata):
     assert np.array_equal(tasks, evaluation.session_tasks(len(gazedata[1]), 3))
 
 
-def test_lkh_matches_lkh_win_5(step1):
-    ml = scipy.io.loadmat(os.path.join(REFS, 'lkh_win_5.mat'))['lkh_ses'].ravel()
-    lkh = step1[0]
-    assert len(lkh) == len(ml) == 111
-    for s, cells in enumerate(ml):
-        for att, ref in enumerate(np.asarray(cells).ravel()):
-            assert np.allclose(lkh[s][att], np.asarray(ref).ravel(), rtol=0, atol=1e-15)
-
-
-def test_seqmask_and_session_all_match_segsessions(step1):
-    ss = scipy.io.loadmat(os.path.join(REFS, 'segsessions.mat'))
-    assert ss['thr'].item() == 0.03 and ss['win_size'].item() == 5
-    _, mask, session_all = step1
-    for py, ml in zip(mask, cell_list(ss['seqmask'])):
+def test_session_all_matches_segsessions(step1, gazedata):
+    """all browsed values (session_all) of python-ver equal those of MATLAB (independent of the AOF detection)"""
+    knowledge, catalogs, seqsets = pipeline.legacy_sets(*gazedata)
+    for py, ml in zip([knowledge.set_features(q).T for q in seqsets], step1[2]):
         assert np.array_equal(py, ml)
-    for py, ml in zip(session_all, cell_list(ss['session_all'])):
-        assert np.array_equal(py, ml)
-    spe = SessionProcessor().remove_empty_columns(mask)
+    spe = SessionProcessor().remove_empty_columns(step1[1])
     assert sum(m.shape[1] == 0 for m in spe) == TABLE2[:, -1].sum()  # 4 sessions without AOF
+
+
+def test_mset_on_paper_data(gazedata):
+    """
+    step 1 of python-ver (MSET, alpha 0.05, windows of 1..10 items) on the paper's data (regression values):
+    no AOF in 6 sessions, the 4 sessions without AOF in MATLAB (shorter than 5 items) and 2 more
+    """
+    knowledge, catalogs, seqsets = pipeline.legacy_sets(*gazedata)
+    _, masks, _ = pipeline.detect_aof(knowledge, catalogs, seqsets)
+    assert len(masks) == 111 and all(m.shape == (15, len(q)) for m, q in zip(masks, seqsets))
+    no_aof = [s for s, m in enumerate(masks) if not m.any()]
+    matlab = [s for s, m in enumerate(cell_list(scipy.io.loadmat(os.path.join(REFS, 'segsessions.mat'))['seqmask']))
+              if not m.any()]
+    assert no_aof == [27, 35, 39, 73, 79, 96] and set(matlab) <= set(no_aof)
 
 
 @pytest.mark.parametrize('tag', ['spe', 'all'])
@@ -130,7 +129,7 @@ def test_aof_similarities_match_distances_mat(gazedata, step1):
     sessions = pipeline.load_gazedata_sessions(os.path.join(REFS, 'gazedata.mat'))
     assert [s['task'] for s in sessions] == list(evaluation.session_tasks(len(seqs), 3))
     assert all(sorted(s['session_id'] for s in sessions[u::37]) == [1, 2, 3] for u in range(37))
-    dists = evaluation.aof_similarities([s['f'] for s in sessions], attrs, session_all, mask,
+    dists = evaluation.aof_similarities([s['f'] for s in sessions], evaluation.legacy_item_features(attrs), session_all, mask,
                                         evaluation.session_tasks(len(seqs), 3), evaluation.GIVENTASK)
     ref = scipy.io.loadmat(os.path.join(REFS, 'distances.mat'))
     for name, value in dists.items():

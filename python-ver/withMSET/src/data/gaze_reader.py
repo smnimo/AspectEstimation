@@ -1,11 +1,19 @@
 """
 Data reader implementation for AspectEstimation
 Translates ReadwithTimestamp.m and LoadGaze.m functionality
+
+The catalog size and the attributes are taken from knowledge.csv (data.knowledge) and the screen grid from `grid`
+(rows, columns; default 3 x 4 as in the paper). A .list file holds the item ids of the grid cells in row-major
+order, each plus 100 x task.
 """
 
 import numpy as np
 import os
-from typing import Dict, Any
+import sys
+from typing import Dict, Any, Tuple
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # src (when run as a script)
+from data.knowledge import Knowledge, load_knowledge  # noqa: E402
 
 
 def gaze_xy(gaze_data: np.ndarray):
@@ -45,44 +53,52 @@ class GazeDataReader:
     4. Conversion from gaze coordinates to semantic attributes
     """
     
-    def __init__(self, base_path: str = "../../..", knowledge_csv_path: str = None):
+    def __init__(self, base_path: str = "../../..", knowledge_csv_path: str = None, grid: Tuple[int, int] = (3, 4)):
         """
         Initialize the gaze data reader
         
         Args:
             base_path: Base directory containing data files (default: relative to AspectEstimation root)
             knowledge_csv_path: Explicit path to knowledge.csv file (optional)
+            grid: (rows, columns) of the item grid on the screen
         """
         self.base_path = base_path
         self.knowledge_csv_path = knowledge_csv_path
-        self.knowledge_base = None  # KB matrix from knowledge.csv
+        self.grid = (int(grid[0]), int(grid[1]))
+        self.knowledge = None       # data.knowledge.Knowledge from knowledge.csv
+        self.knowledge_base = None  # KB matrix (items x attributes, values 1..N) if every item has one value per attribute
         self.sessions = {}          # Processed session data
         self.semantic_attribute_seq = {}  # Sequence of attributes per session
         self.semantic_attributes = {}     # All attributes per session
         
-    def load_knowledge_base(self, knowledge_file: str = None) -> np.ndarray:
+    def _read_knowledge(self, knowledge_path: str) -> Knowledge:
+        self.knowledge = load_knowledge(knowledge_path)
+        try:
+            self.knowledge_base = self.knowledge.value_matrix()
+        except ValueError:
+            self.knowledge_base = None  # multi-valued categorical attributes
+        print(f"✅ Loaded knowledge base from: {knowledge_path}")
+        print(f"{self.knowledge.n_items} items x {self.knowledge.n_attributes} attributes "
+              f"({self.knowledge.n_features} features)")
+        return self.knowledge
+
+    def load_knowledge_base(self, knowledge_file: str = None) -> Knowledge:
         """
-        Load the knowledge base (Feature→Observation mapping)
+        Load the knowledge base (item attributes; data.knowledge.load_knowledge)
         
         Args:
             knowledge_file: Path to knowledge.csv (optional, uses explicit path if set)
             
         Returns:
-            Knowledge base matrix (items × attributes)
+            Knowledge (also self.knowledge; self.knowledge_base is the KB matrix when it exists)
             
         Translates: KB = csvread('../knowledge/knowledge.csv');
         """
         # Use explicit path if provided during initialization
         if self.knowledge_csv_path:
-            knowledge_path = self.knowledge_csv_path
-            if os.path.exists(knowledge_path):
-                try:
-                    self.knowledge_base = np.loadtxt(knowledge_path, delimiter=',', dtype=int)
-                    print(f"✅ Loaded knowledge base from: {knowledge_path}")
-                    print(f"Shape: {self.knowledge_base.shape} (items × attributes)")
-                    return self.knowledge_base
-                except Exception as e:
-                    print(f"Error loading {knowledge_path}: {e}")
+            if not os.path.exists(self.knowledge_csv_path):
+                raise FileNotFoundError(f"knowledge.csv not found: {self.knowledge_csv_path}")
+            return self._read_knowledge(self.knowledge_csv_path)
         
         # Fallback to relative path search
         if knowledge_file is None:
@@ -100,43 +116,10 @@ class GazeDataReader:
         
         for knowledge_path in possible_paths:
             if os.path.exists(knowledge_path):
-                try:
-                    self.knowledge_base = np.loadtxt(knowledge_path, delimiter=',', dtype=int)
-                    print(f"✅ Loaded knowledge base from: {knowledge_path}")
-                    print(f"Shape: {self.knowledge_base.shape} (items × attributes)")
-                    return self.knowledge_base
-                except Exception as e:
-                    print(f"Error loading {knowledge_path}: {e}")
-                    continue
+                return self._read_knowledge(knowledge_path)
         
         raise FileNotFoundError(
             f"knowledge.csv not found; tried {[os.path.abspath(p) for p in possible_paths]}")
-    
-    def _convert_to_onehot(self, semantic_seq: np.ndarray) -> np.ndarray:
-        """
-        Convert semantic attribute sequence to one-hot encoding
-        
-        Args:
-            semantic_seq: 5×T array where each value is 1, 2, or 3
-            
-        Returns:
-            15×T array with one-hot encoding (5 attributes × 3 values each)
-        """
-        n_attributes, n_timepoints = semantic_seq.shape
-        n_values = 3  # Each attribute can have values 1, 2, 3
-        
-        # Create one-hot encoded array: 15×T (5 attributes × 3 values)
-        onehot = np.zeros((n_attributes * n_values, n_timepoints), dtype=float)
-        
-        for attr in range(n_attributes):
-            for t in range(n_timepoints):
-                value = semantic_seq[attr, t]
-                if 1 <= value <= 3:
-                    # Convert to one-hot index: attribute * 3 + (value - 1)
-                    onehot_idx = attr * n_values + (value - 1)
-                    onehot[onehot_idx, t] = 1.0
-        
-        return onehot
     
     def load_session_from_files(self, csv_file: str, list_file: str, 
                                user_id: int = 1, task_id: int = 1) -> dict:
@@ -169,7 +152,7 @@ class GazeDataReader:
         
         print(f"✅ Session {session_key} loaded successfully")
         print(f"   Grid positions processed: {len(session['f'])} timepoints")
-        print(f"   Semantic sequence shape: {session['semantic_attribute_seq'].shape}")
+        print(f"   Feature sequence shape: {session['feature_seq'].shape}")
         
         return session
     
@@ -213,22 +196,22 @@ class GazeDataReader:
     
     def gaze_to_items(self, gaze_data: np.ndarray) -> np.ndarray:
         """
-        Convert gaze coordinates to grid positions (1-12) as in LoadGaze.m (with the fixes noted in gaze_xy / below)
+        Convert gaze coordinates to grid positions (1..rows x columns, row-major) as in LoadGaze.m
+        (with the fixes noted in gaze_xy / below)
         
         Args:
             gaze_data: Gaze tracking data (timepoints × 5: timestamp, right_x, right_y, left_x, left_y)
             
         Returns:
-            Grid position sequence (timepoints,) with positions 1-12 or -1 for invalid
+            Grid position sequence (timepoints,) with positions 1..rows x columns or -1 for invalid
         """
         x, y = gaze_xy(gaze_data)
         
-        # Grid parameters: 3 rows × 4 columns
-        vN = 3  # vertical (rows)
-        cN = 4  # horizontal (columns)
+        # Grid parameters (paper: 3 rows × 4 columns)
+        vN, cN = self.grid  # vertical (rows), horizontal (columns)
 
         # Convert normalized coordinates to grid positions
-        # x coordinate: 1/4 intervals, y coordinate: 1/3 intervals
+        # x coordinate: 1/cN intervals, y coordinate: 1/vN intervals
         # x == 1 or y == 1 is valid (only > 1 is rejected below) and belongs to the last column / row;
         # LoadGaze.m maps it to a non-existent cell (next row, or a target > 12)
         row = np.minimum(np.floor(y * vN), vN - 1)
@@ -326,8 +309,8 @@ class GazeDataReader:
     def _process_session_data(self, gaze_data: np.ndarray, layout_data: np.ndarray,
                              user_id: int, task_id: int) -> dict:
         """
-        Process raw gaze and layout data into semantic attributes
-        Exact translation of LoadGaze.m + ReadwithTimestamp.m processing
+        Process raw gaze and layout data into item attributes
+        Translation of LoadGaze.m + ReadwithTimestamp.m processing, for any knowledge.csv and grid
         
         Args:
             gaze_data: Raw gaze tracking data (timepoints × 5)
@@ -339,7 +322,7 @@ class GazeDataReader:
             Processed session data dictionary
         """
         # Load gaze sequence using LoadGaze.m equivalent
-        # First get grid positions (1-12), then apply duration processing
+        # First get grid positions (1..rows x columns), then apply duration processing
         grid_positions = self.gaze_to_items(gaze_data)
         target_duration = self.process_target_duration(gaze_data, grid_positions)
         
@@ -358,32 +341,32 @@ class GazeDataReader:
             dur = np.array([])
         
         # Ensure knowledge base is loaded
-        if self.knowledge_base is None:
+        if self.knowledge is None:
             self.load_knowledge_base()
+        knowledge = self.knowledge
         
-        # Create semantic_attribute_seq as in MATLAB: KB(list(f), :)'
-        # This is the key mapping: f indexes into item_list, then into KB
+        # Map the browsed grid positions to items: list(f) as in MATLAB
         # (MATLAB errors on an invalid index; zero-filling would create attribute value 0)
-        if np.any((item_list < 1) | (item_list > self.knowledge_base.shape[0])):
-            raise ValueError(f"item ids out of the knowledge base range: {layout_data}")
-        if len(f) > 0:
-            if np.any((f < 1) | (f > len(item_list))):
-                raise ValueError(f"grid positions out of 1..{len(item_list)}: {np.unique(f)}")
-            semantic_seq = self.knowledge_base[item_list[f - 1] - 1, :].T
-
-            # Convert to one-hot encoding for feature values
-            # Each attribute can have values 1, 2, 3 -> 15 features total (5 attributes × 3 values)
-            semantic_seq_onehot = self._convert_to_onehot(semantic_seq)
-        else:
-            semantic_seq = np.zeros((self.knowledge_base.shape[1], 0), dtype=int)
-            semantic_seq_onehot = np.zeros((15, 0), dtype=float)  # 5 attributes × 3 values
+        n_cells = self.grid[0] * self.grid[1]
+        if len(item_list) != n_cells:
+            raise ValueError(f"the .list has {len(item_list)} items, the {self.grid[0]} x {self.grid[1]} grid "
+                             f"has {n_cells} cells: {layout_data}")
+        if np.any((item_list < 1) | (item_list > knowledge.n_items)):
+            raise ValueError(f"item ids out of the knowledge base range 1..{knowledge.n_items}: {layout_data}")
+        if np.any((f < 1) | (f > len(item_list))):
+            raise ValueError(f"grid positions out of 1..{len(item_list)}: {np.unique(f)}")
+        browsed = item_list[f - 1].astype(int)
         
-        # Create semantic_attributes: KB(list, :)
-        semantic_attributes = np.zeros((len(item_list), self.knowledge_base.shape[1]), dtype=int)
-        for i, item in enumerate(item_list):
-            kb_idx = item - 1  # Convert to 0-based
-            if 0 <= kb_idx < self.knowledge_base.shape[0]:
-                semantic_attributes[i, :] = self.knowledge_base[kb_idx, :]
+        # Attributes of the browsed items (feature_seq: features x T, session_all) and of the displayed items
+        feature_seq = knowledge.features(browsed).T
+        item_features = knowledge.features(item_list)
+        
+        # Integer attributes as in MATLAB, KB(list(f), :)' and KB(list, :), when KB exists
+        if self.knowledge_base is not None:
+            semantic_seq = self.knowledge_base[browsed - 1, :].T
+            semantic_attributes = self.knowledge_base[item_list - 1, :]
+        else:
+            semantic_seq = semantic_attributes = None
         
         # Add candidate information based on task (as in ReadwithTimestamp.m)
         if task == 1:
@@ -405,9 +388,10 @@ class GazeDataReader:
             'task': task,                             # Task number
             'usr': user_id,                           # User ID
             'totalduration': total_duration,          # Total session duration
-            'semantic_attribute_seq': semantic_seq,   # KB(list(f), :)' - original 5×T
-            'semantic_attribute_seq_onehot': semantic_seq_onehot,  # One-hot encoded 15×T
-            'semantic_attributes': semantic_attributes, # KB(list, :)
+            'semantic_attribute_seq': semantic_seq,   # KB(list(f), :)' (attributes x T) or None
+            'semantic_attributes': semantic_attributes, # KB(list, :) or None
+            'feature_seq': feature_seq,               # values of the browsed items (features x T, 0/1)
+            'item_features': item_features,           # values of the displayed items (items x features, 0/1)
             'candidate': candidate,                   # Task-specific candidates
             'raw_gaze': gaze_data,                    # Original gaze data
             'layout_data': layout_data,               # Original layout data
@@ -430,7 +414,7 @@ class GazeDataReader:
         Returns:
             Processed session data (see _process_session_data)
         """
-        if self.knowledge_base is None:
+        if self.knowledge is None:
             self.load_knowledge_base()
         layout = np.loadtxt(list_file, dtype=int)
         return self._process_session_data(np.loadtxt(csv_file, delimiter=','), layout, user_id, int(layout[0] // 100))
@@ -450,12 +434,13 @@ class GazeDataReader:
 
         Returns:
             {'session', 'semantic_attribute_seq', 'semantic_attributes'}: dicts keyed by (usr, task),
-            'KB', and 'n_usr'; use main.from_reader_sessions for MATLAB's cell(:) order
+            'KB' (None with multi-valued attributes), 'knowledge' and 'n_usr';
+            use main.reader_session_list for MATLAB's cell(:) order
 
         Raises:
             FileNotFoundError / ValueError: missing or invalid files (no fallback to fake data)
         """
-        if self.knowledge_base is None:
+        if self.knowledge is None:
             self.load_knowledge_base()
         if experiment_dir is None:
             experiment_dir = os.path.dirname(os.path.abspath(timestamp_list))
@@ -487,16 +472,17 @@ class GazeDataReader:
             'semantic_attribute_seq': self.semantic_attribute_seq,
             'semantic_attributes': self.semantic_attributes,
             'KB': self.knowledge_base,
+            'knowledge': self.knowledge,
             'n_usr': usr
         }
 
     def save_gazedata(self, data: Dict[str, Any], output_file: str = "gazedata.mat"):
         """
-        Save sessions as a MATLAB gazedata.mat readable by main.load_gazedata_mat
+        Save sessions as a MATLAB gazedata.mat readable by main.load_gazedata_mat / main.load_gazedata_sessions
 
-        semantic_attribute_seq / semantic_attributes are saved as n_usr x n_task cell arrays
-        indexed {usr, task}, as in ReadwithTimestamp.m, together with KB. The session structs
-        (f, dur, list, ...) are not saved.
+        The session structs (f, dur, list, task, usr, session_id, totalduration) are saved as an n_usr x n_task cell
+        array indexed {usr, task}, as in ReadwithTimestamp.m. semantic_attribute_seq / semantic_attributes and KB
+        are saved as well when every item has one value per attribute (KB exists).
 
         Args:
             data: Output of load_all_sessions
@@ -511,14 +497,24 @@ class GazeDataReader:
         missing = [(u, t) for u in range(1, n_usr + 1) for t in range(1, n_task + 1) if (u, t) not in data['session']]
         if missing:
             print(f"Warning: empty cells for (usr, task) = {missing}")
-        cells = {}
-        for name in ('semantic_attribute_seq', 'semantic_attributes'):
-            c = np.empty((n_usr, n_task), dtype=object)
-            for u in range(n_usr):
-                for t in range(n_task):
-                    c[u, t] = np.asarray(data[name].get((u + 1, t + 1), np.zeros((0, 0))), dtype=float)
-            cells[name] = c
-        scipy.io.savemat(output_file, {**cells, 'KB': np.asarray(data['KB'], dtype=float)})
+        fields = ('f', 'dur', 'list', 'task', 'usr', 'session_id', 'totalduration')
+        structs = np.empty((n_usr, n_task), dtype=object)
+        for u in range(n_usr):
+            for t in range(n_task):
+                s = data['session'].get((u + 1, t + 1))
+                structs[u, t] = np.zeros((0, 0)) if s is None else {
+                    k: (np.asarray(s[k], dtype=float).reshape(-1, 1) if k in ('f', 'dur', 'list') else float(s[k]))
+                    for k in fields if k in s}
+        out = {'session': structs}
+        if data.get('KB') is not None:
+            for name in ('semantic_attribute_seq', 'semantic_attributes'):
+                c = np.empty((n_usr, n_task), dtype=object)
+                for u in range(n_usr):
+                    for t in range(n_task):
+                        c[u, t] = np.asarray(data[name].get((u + 1, t + 1), np.zeros((0, 0))), dtype=float)
+                out[name] = c
+            out['KB'] = np.asarray(data['KB'], dtype=float)
+        scipy.io.savemat(output_file, out)
         print(f"Saved {len(keys)} sessions ({n_usr} users x {n_task} tasks) to {output_file}")
 
 
@@ -528,19 +524,21 @@ def main_read_gaze_data():
 
     Usage (from python-ver/):
       python src/data/gaze_reader.py --timestamp-list ../experiment/timestamp.list \
-          --knowledge ../knowledge/knowledge.csv --out gazedata.mat
-      python main.py --mat gazedata.mat --eval
+          --knowledge ../knowledge/knowledge.csv [--grid 3 4] --out gazedata.mat
+      python main.py --mat gazedata.mat --knowledge ../knowledge/knowledge.csv --eval
     """
     import argparse
     parser = argparse.ArgumentParser(description="Read gaze data (ReadwithTimestamp.m)")
     parser.add_argument('--timestamp-list', required=True, help="timestamp.list (one session name per line)")
     parser.add_argument('--experiment-dir', default=None,
                         help="directory with <name>.csv / .list (default: directory of timestamp.list)")
-    parser.add_argument('--knowledge', required=True, help="knowledge.csv (KB, 12 items x 5 attributes)")
+    parser.add_argument('--knowledge', required=True, help="knowledge.csv (item attributes; see data.knowledge)")
+    parser.add_argument('--grid', type=int, nargs=2, default=(3, 4), metavar=('ROWS', 'COLS'),
+                        help="item grid on the screen (default: 3 4)")
     parser.add_argument('--out', default='gazedata.mat')
     args = parser.parse_args()
 
-    reader = GazeDataReader(base_path='.', knowledge_csv_path=args.knowledge)
+    reader = GazeDataReader(base_path='.', knowledge_csv_path=args.knowledge, grid=args.grid)
     reader.load_knowledge_base()
     data = reader.load_all_sessions(args.timestamp_list, args.experiment_dir)
     reader.save_gazedata(data, args.out)
